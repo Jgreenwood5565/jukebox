@@ -147,3 +147,24 @@ msgstr "Login"
 #, python-format
 msgid "Login with your %(backend)s account"
 msgstr "Login with your %(backend)s account"
+
+msgid "Username"
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "or"
+msgstr ""
+
+msgid "Too many failed login attempts, please try again later."
+msgstr ""
+
+msgid "Theme"
+msgstr ""
+
+msgid "Dark"
+msgstr ""
+
+msgid "Light"
+msgstr ""
