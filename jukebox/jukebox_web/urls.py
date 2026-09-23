@@ -1,27 +1,17 @@
-# -*- coding: UTF-8 -*-
+from django.urls import path
+from django.views.i18n import JavaScriptCatalog
 
-from django.conf.urls import patterns, url
-from jukebox.jukebox_core.models import QueueFeed
-import views
+from . import views
 
-js_info_dict = {
-    'packages': (
-        'jukebox_web',
+urlpatterns = [
+    path("", views.index, name="jukebox_web_index"),
+    path("login", views.login, name="jukebox_web_login"),
+    path("login/error", views.login_error, name="jukebox_web_login_error"),
+    path("language/set/<slug:language>", views.language, name="jukebox_web_language"),
+    path("logout", views.logout, name="jukebox_web_logout"),
+    path(
+        "jsi18n/",
+        JavaScriptCatalog.as_view(packages=["jukebox.jukebox_web"]),
+        name="javascript-catalog",
     ),
-}
-
-urlpatterns = patterns("",
-    url(r"^$", views.index, name="jukebox_web_index"),
-    url(r"^login$", views.login, name="jukebox_web_login"),
-    url(r"^login/error$", views.login_error, name="jukebox_web_login_error"),
-    url(
-        r"^language/set/(?P<language>[a-z]{2})",
-        views.language,
-        name="jukebox_web_language"
-    ),
-    url(r"^logout$", views.logout, name="jukebox_web_logout"),
-    url(r'^jsi18n/$', 'django.views.i18n.javascript_catalog', js_info_dict),
-
-     # RSS feed url
-    (r'^feed/$', QueueFeed()),
-)
+]

@@ -1,66 +1,69 @@
-# -*- coding: UTF-8 -*-
-
-from django.shortcuts import render_to_response
-from django.core.context_processors import csrf
-from django.http import HttpResponseRedirect
-from django.contrib.auth import logout as auth_logout
-from django.template import RequestContext
-from django.contrib.messages.api import get_messages
 from django.conf import settings
-from jukebox.jukebox_core.models import Song, Genre
+from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.messages import get_messages
+from django.http import HttpResponseRedirect
+from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils import translation
+from django.views.decorators.http import require_POST
 
+from jukebox.jukebox_core.models import Genre, Song
+
+
+@login_required
 def index(request):
-    if request.user.is_authenticated():
-        request.session.set_expiry(settings.SESSION_TTL)
+    request.session.set_expiry(settings.SESSION_TTL)
 
-        genres = Genre.objects.all()
-        years = Song.objects.values("Year").distinct()
-        years = years.exclude(Year=None).exclude(Year=0).order_by("Year")
+    years = (
+        Song.objects.values_list("Year", flat=True)
+        .exclude(Year=None)
+        .exclude(Year=0)
+        .order_by("Year")
+        .distinct()
+    )
+    context = {
+        "username": request.user.get_full_name() or request.user.get_username(),
+        "genres": Genre.objects.all(),
+        "years": years,
+    }
+    return render(request, "index.html", context)
 
-        context = {
-            "username": request.user.get_full_name(),
-            "genres": genres,
-            "years": years
-        }
-        context.update(csrf(request))
-        return render_to_response('index.html', context)
-    else:
-        return HttpResponseRedirect('login')
 
 def login(request):
-    if request.user.is_authenticated():
-        return HttpResponseRedirect('index')
-    else:
-        return render_to_response(
-            'login.html',
-            {
-                "backends": settings.SOCIAL_AUTH_ENABLED_BACKENDS,
-            },
-            RequestContext(request)
-        )
+    if request.user.is_authenticated:
+        return redirect("jukebox_web_index")
+
+    return render(request, "login.html", {"backends": settings.SOCIAL_AUTH_ENABLED_BACKENDS})
+
 
 def login_error(request):
-    messages = get_messages(request)
-    return render_to_response(
-        'login.html',
-        {"error": messages},
-        RequestContext(request)
+    return render(
+        request,
+        "login.html",
+        {
+            "backends": settings.SOCIAL_AUTH_ENABLED_BACKENDS,
+            "error": get_messages(request),
+        },
     )
 
+
+@require_POST
 def logout(request):
     auth_logout(request)
-    return HttpResponseRedirect('/')
+    return redirect("jukebox_web_login")
+
 
 def language(request, language):
-    from django.utils.translation import check_for_language
-    from django.utils import translation
-
-    response = HttpResponseRedirect("/")
-    if language and check_for_language(language):
-        if hasattr(request, "session"):
-            request.session["django_language"] = language
-        else:
-            response.set_cookie(settings.LANGUAGE_COOKIE_NAME, language)
+    response = HttpResponseRedirect(reverse("jukebox_web_index"))
+    if translation.check_for_language(language):
         translation.activate(language)
-
+        response.set_cookie(
+            settings.LANGUAGE_COOKIE_NAME,
+            language,
+            max_age=settings.LANGUAGE_COOKIE_AGE,
+            samesite=settings.LANGUAGE_COOKIE_SAMESITE,
+            secure=settings.LANGUAGE_COOKIE_SECURE,
+            httponly=settings.LANGUAGE_COOKIE_HTTPONLY,
+        )
     return response

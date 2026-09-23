@@ -281,6 +281,8 @@ span.searchreset {
 }
 
 #profile {
+    position: relative;
+    z-index: 1;
     float: right;
     margin: 20px 20px 0 0;
     text-align: right;
@@ -319,6 +321,15 @@ span.searchreset {
 #accountoptions ul li {
     padding: 0 0 5px 20px;
     border-left:  3px solid #FFFFFF;
+}
+
+#accountoptions button.linkbutton {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: #ED9005;
+    cursor: pointer;
 }
 
 #accountoptions ul li.active {
@@ -409,10 +420,13 @@ span.searchreset {
 
 #main table.list th {
     padding:  0 0 10px 0;
+}
+
+#main table.list th[data-sort] {
     cursor: pointer;
 }
 
-#main table.list th:hover {
+#main table.list th[data-sort]:hover {
     color: #ED9005;
 }
 

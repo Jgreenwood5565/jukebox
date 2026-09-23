@@ -10,9 +10,7 @@ The more votes a song gets, the sooner you will listen to it.
 At one point in your life your play queue might get empty. Don't worry, the jukebox will keep on playing.
 The playback system figures out who is online using the web interface or API and plays music to their liking.
 
-**Required system libraries**
-
-libshout3, libshout3-dev and python-dev are required to build the dependecy `python-shout <http://pypi.python.org/pypi/python-shout>`_.
+Jukebox requires Python 3.10 or newer.
 
 .. image:: http://static.jensnistler.de/jukebox.png
    :height: 404px
@@ -24,33 +22,22 @@ General
 ========
 
 - Jukebox is available in english and german
-- Jukebox uses Facebook, Twitter and Github for authentication (see `django-social-auth <https://github.com/omab/django-social-auth>`_ for more authentication providers)
+- Jukebox uses Facebook, Twitter and Github for authentication (see `python-social-auth <https://python-social-auth.readthedocs.io/>`_ for more authentication providers)
 
 Setup
 ==================
 
-Install `virtualenvwrapper <https://pypi.python.org/pypi/virtualenvwrapper>`_ via `pip <http://pypi.python.org/pypi/pip>`_ if not alreay done:
+Install the jukebox into a virtual environment:
 
 ::
 
-    sudo pip install virtualenvwrapper
-
-Set up a project for jukebox:
-
-::
-
-    mkproject jukebox
-
-Install the jukebox in your fresh virtual environment:
-
-::
-
-    workon jukebox
+    python3 -m venv ~/jukebox-env
+    source ~/jukebox-env/bin/activate
     pip install jukebox
 
 Now it's time to configure the jukebox
 
-1. Enter admin credentials and select authentication providers
+1. Enter admin credentials, host names and select authentication providers
 2. Create the database
 3. Index your music
 
@@ -59,17 +46,45 @@ That's all
 ::
 
     jukebox jukebox_setup
-    jukebox syncdb
     jukebox migrate
     jukebox jukebox_index --path=/path/to/library
 
-The django builtin development webserver will be sufficient to serve your office or party. Just start it up:
+Configuration, database and secret key are stored in ``~/.jukebox``. Set the ``JUKEBOX_HOME`` environment variable
+to use a different directory. The configuration file ``settings_local.py`` can override every Django setting, see
+``jukebox/settings_local.example.py``. ``JUKEBOX_DEBUG``, ``JUKEBOX_ALLOWED_HOSTS`` and ``JUKEBOX_SECRET_KEY``
+can be set as environment variables as well.
+
+When registering the app with your authentication provider, use ``http(s)://<your host>/complete/<provider>/``
+(e.g. ``/complete/github/``) as callback URL.
+
+The django builtin development webserver will be sufficient to serve your office or party, static files are served
+by the jukebox itself. Just start it up:
 
 ::
 
     jukebox runserver ip:port
 
+For a more robust setup, run ``jukebox.wsgi:application`` with any WSGI server, e.g.
+
+::
+
+    pip install gunicorn
+    DJANGO_SETTINGS_MODULE=jukebox.settings gunicorn jukebox.wsgi:application --bind ip:port
+
 Now you're ready to put music in the queue.
+
+Upgrading from 0.4
+------------------
+
+Jukebox 0.5 switched from South to Django migrations and from django-social-auth to python-social-auth. Your
+existing ``settings_local.py`` keeps working. Back up ``~/.jukebox/db.sqlite`` and convert the database once:
+
+::
+
+    jukebox jukebox_upgrade
+
+Timestamps are now stored in UTC, entries created by older versions are displayed shifted by your UTC offset.
+The playback and live indexer plugins have to be updated to Python 3 as well.
 
 Playback
 =========
@@ -139,18 +154,32 @@ You want to contribute to this project? Just fork the repo and do this:
 
 ::
 
-    mkproject jukebox
-    git clone git@github.com:[username]/jukebox.git .
-    git remote add upstream git://github.com/lociii/jukebox.git
-    pip install -r requirements.txt
+    git clone git@github.com:[username]/jukebox.git
     cd jukebox
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -e ".[dev]"
 
-Follow up configuring jukebox like described in Setup. Use ./manage.py instead of the jukebox command.
+Follow up configuring jukebox like described in Setup. Use ``./manage.py`` instead of the jukebox command.
+Before sending a pull request, run the tests and the linter:
 
-You can now create a branch to make your actual changes and send a pull request. See `this article <https://www.openshift.com/wiki/github-workflow-for-submitting-pull-requests>`_ for how to do this.
+::
+
+    ./manage.py test
+    ruff check . && ruff format --check .
 
 Release Notes
 ==============
+
+0.5.0
+
+- Python 3 and Django 5.2 LTS, Django migrations instead of South, python-social-auth instead of django-social-auth
+- Security: the API now actually requires authentication, a random secret key is generated per installation,
+  song metadata and user names are escaped in the web interface, jQuery updated to 3.7.1,
+  skipping songs and logging out require POST
+- Fixed login redirect, RSS feed picking a random instead of the next song, infinite scrolling dropping search
+  filters, removed directories deleting songs of sibling directories and several crashes on invalid input
+- Static files are served without DEBUG mode, new ``jukebox_upgrade`` command for existing installations
 
 0.1.0
 

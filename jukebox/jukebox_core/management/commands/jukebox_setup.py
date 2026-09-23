@@ -1,151 +1,145 @@
-# -*- coding: UTF-8 -*-
-from django.core.management.base import BaseCommand
+import os
+
 from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
+from django.core.management.utils import get_random_secret_key
+
+PROVIDERS = {
+    "facebook": {
+        "label": "Facebook",
+        "backend": "social_core.backends.facebook.FacebookOAuth2",
+        "url": "https://developers.facebook.com/apps/",
+    },
+    "twitter": {
+        "label": "Twitter",
+        "backend": "social_core.backends.twitter.TwitterOAuth",
+        "url": "https://developer.twitter.com/en/portal/dashboard",
+    },
+    "github": {
+        "label": "Github",
+        "backend": "social_core.backends.github.GithubOAuth2",
+        "url": "https://github.com/settings/applications/new",
+    },
+}
 
 
 class Command(BaseCommand):
+    help = "Interactively create the jukebox site configuration"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Overwrite an existing settings_local.py",
+        )
+
     def handle(self, *args, **options):
-        print "----------------------------------------------"
-        print "-----    Welcome to the jukebox setup    -----"
-        print "----------------------------------------------"
-        print ""
+        target = os.path.join(settings.JUKEBOX_STORAGE_PATH, "settings_local.py")
+        if os.path.exists(target) and not options["force"]:
+            raise CommandError(f"{target} already exists, use --force to overwrite it")
 
-        print "Page administrator"
-        print "----------------------------------------------"
-        print ""
-        admin_user = raw_input("\tName: ")
-        admin_email = raw_input("\tE-mail: ")
-        print ""
+        self.stdout.write("----------------------------------------------")
+        self.stdout.write("-----    Welcome to the jukebox setup    -----")
+        self.stdout.write("----------------------------------------------")
+        self.stdout.write("")
 
-        # get authentication methods
-        authentication = self.setAuthentication()
+        self.stdout.write("Page administrator")
+        self.stdout.write("----------------------------------------------")
+        admin_user = self.ask("\tName: ")
+        admin_email = self.ask("\tE-mail: ")
+        self.stdout.write("")
+
+        self.stdout.write("Hosts")
+        self.stdout.write("----------------------------------------------")
+        self.stdout.write("\tHost names or IP addresses used to open the jukebox in the browser")
+        hosts = input("\tComma separated [localhost,127.0.0.1]: ").strip()
+        allowed_hosts = [h.strip() for h in hosts.split(",") if h.strip()] or [
+            "localhost",
+            "127.0.0.1",
+        ]
+        self.stdout.write("")
+
+        authentication = self.read_authentication()
         while not authentication:
-            authentication = self.setAuthentication()
+            authentication = self.read_authentication()
 
-        self.setup(admin_user, admin_email, authentication)
+        with open(
+            os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8"
+        ) as f:
+            f.write(self.render(admin_user, admin_email, allowed_hosts, authentication))
 
-    def setAuthentication(self):
-        print "Please select your authentication methods"
-        print "----------------------------------------------"
-        print "Available providers: Facebook, Twitter, Github"
-        print ""
+        self.stdout.write(self.style.SUCCESS(f"Setup finished, configuration written to {target}"))
+        self.stdout.write("----------------------------------------------")
 
-        print "Facebook"
-        print "\tFacebook authentication requires setup of a Facebook app on "\
-            "http://developers.facebook.com/setup/"
-        facebook = self.readAppData("Facebook")
-        print ""
+    def ask(self, prompt):
+        value = ""
+        while not value:
+            value = input(prompt).strip()
+        return value
 
-        print "Twitter"
-        print "\tTwitter authentication requires setup of a Twitter app on "\
-            "https://dev.twitter.com/apps/new"
-        twitter = self.readAppData("Twitter")
-        print ""
+    def read_authentication(self):
+        self.stdout.write("Please select your authentication methods")
+        self.stdout.write("----------------------------------------------")
+        self.stdout.write(
+            "Available providers: " + ", ".join(p["label"] for p in PROVIDERS.values())
+        )
+        self.stdout.write("")
 
-        print "Github"
-        print "\tGithub authentication requires setup of a Github app on "\
-            "https://github.com/settings/applications/new"
-        github = self.readAppData("Github")
-        print ""
+        authentication = {}
+        for name, provider in PROVIDERS.items():
+            self.stdout.write(provider["label"])
+            self.stdout.write(
+                f"\t{provider['label']} authentication requires setup of an app on "
+                f"{provider['url']}"
+            )
+            self.stdout.write(f"\tCallback URL: http(s)://<your host>/complete/{name}/")
+            data = self.read_app_data(provider["label"])
+            if data is not None:
+                authentication[name] = data
+            self.stdout.write("")
 
-        if facebook is None and twitter is None and github is None:
-            print "Are your kidding me? Why didn't you select a provider?"
-            print "I won't let you go until you select at least one of them."
-            print ""
-            return False
+        if not authentication:
+            self.stdout.write("Are you kidding me? Why didn't you select a provider?")
+            self.stdout.write("I won't let you go until you select at least one of them.")
+            self.stdout.write("")
+            return None
+
+        return authentication
+
+    def read_app_data(self, label):
+        answer = input(f"\tUse {label} for authentication? [y/n] ").strip().lower()
+        while answer not in ("y", "n"):
+            answer = (
+                input("\tInvalid answer, please enter 'y' for yes or 'n' for no: ").strip().lower()
+            )
+
+        if answer == "n":
+            return None
 
         return {
-            "facebook": facebook,
-            "twitter": twitter,
-            "github": github,
+            "key": self.ask(f"\t{label} app id: "),
+            "secret": self.ask(f"\t{label} app secret: "),
         }
 
-    def readAppData(self, name):
-        type = raw_input(
-            "\tUse " + name + " for authentication? [y/n] "
-        ).strip().lower()
-        while type != "n" and type != "y":
-            type = raw_input(
-                "\tInvalid answer, please enter 'y' for yes or 'n' for no: "
-            ).strip().lower()
-
-        if type == "y":
-            id = ""
-            while id.strip() == "":
-                id = raw_input("\t" + name + " app id: ")
-                if id.strip() == "":
-                    print "\t\tInvald app id"
-            secret = ""
-            while secret.strip() == "":
-                secret = raw_input("\t" + name + " app secret: ")
-                if secret.strip() == "":
-                    print "\t\tInvald app id"
-
-            return {
-                "id": id,
-                "secret": secret,
-            }
-
-        return None
-
-    def setup(self, admin_user, admin_email, authentication):
-        setup = open(settings.BASE_DIR + "/settings_local.example.py").read()
-
-        setup = setup.replace("[admin_user]", admin_user)
-        setup = setup.replace("[admin_email]", admin_email)
-
-        auth_backends = []
-        auth_backends_enabled = []
-
-        if authentication["facebook"] is not None:
-            auth_backends.append(
-                "\"social_auth.backends.facebook.FacebookBackend\","
-            )
-            auth_backends_enabled.append("\"facebook\",")
-
-        if authentication["twitter"] is not None:
-            auth_backends.append(
-                "\"social_auth.backends.twitter.TwitterBackend\","
-            )
-            auth_backends_enabled.append("\"twitter\",")
-
-        if authentication["github"] is not None:
-            auth_backends.append(
-                "\"social_auth.backends.contrib.github.GithubBackend\","
-            )
-            auth_backends_enabled.append("\"github\",")
-
-        setup = setup.replace(
-            "[auth_backends]",
-            "\n    ".join(auth_backends)
-        )
-        setup = setup.replace(
-            "[auth_backends_enabled]",
-            " ".join(auth_backends_enabled)
-        )
-
-        auth_data = ""
-        for key, value in authentication.items():
-            if value is None:
-                continue
-
-            if key == 'twitter':
-                auth_data += "TWITTER_CONSUMER_KEY = \"" + \
-                     value["id"] + "\"\n"
-                auth_data += "TWITTER_CONSUMER_SECRET = \"" + \
-                     value["secret"] + "\"\n"
-            else:
-                auth_data += key.upper() + "_APP_ID = \"" + \
-                     value["id"] + "\"\n"
-                auth_data += key.upper() + "_API_SECRET = \"" + \
-                     value["secret"] + "\"\n"
-            auth_data += "\n"
-
-        setup = setup.replace("[auth_data]", auth_data)
-
-        f = open(settings.JUKEBOX_STORAGE_PATH + "/settings_local.py", "w+")
-        f.write(setup)
-        f.close()
-
-        print "Setup finished"
-        print "----------------------------------------------"
+    def render(self, admin_user, admin_email, allowed_hosts, authentication):
+        backends = ["django.contrib.auth.backends.ModelBackend"] + [
+            PROVIDERS[name]["backend"] for name in authentication
+        ]
+        lines = [
+            "# Generated by jukebox_setup",
+            f"ADMINS = [({admin_user!r}, {admin_email!r})]",
+            "",
+            "DEBUG = False",
+            f"ALLOWED_HOSTS = {allowed_hosts!r}",
+            "",
+            f"SECRET_KEY = {get_random_secret_key()!r}",
+            "",
+            f"AUTHENTICATION_BACKENDS = {backends!r}",
+            f"SOCIAL_AUTH_ENABLED_BACKENDS = {list(authentication)!r}",
+            "",
+        ]
+        for name, data in authentication.items():
+            lines.append(f"SOCIAL_AUTH_{name.upper()}_KEY = {data['key']!r}")
+            lines.append(f"SOCIAL_AUTH_{name.upper()}_SECRET = {data['secret']!r}")
+            lines.append("")
+        return "\n".join(lines)

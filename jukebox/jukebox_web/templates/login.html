@@ -1,18 +1,19 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+{% load i18n static %}<!DOCTYPE html>
+{% get_current_language as LANGUAGE_CODE %}
+<html lang="{{ LANGUAGE_CODE }}">
     <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <title>{% trans 'Democratic Jukebox - your democratic music player' %}</title>
         <meta name="description" content="{% trans 'Democratic Jukebox - your democratic music player' %}">
-        <meta charset="UTF-8"/>
-        <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon"/>
-        <link type="text/css" rel="stylesheet" href="/static/css/music.css" />
+        <link rel="shortcut icon" href="{% static 'img/favicon.ico' %}" type="image/x-icon"/>
+        <link type="text/css" rel="stylesheet" href="{% static 'css/music.css' %}" />
     </head>
     <body>
         <div id="header">
             <div id="logo">
-                <a href="/">
-                    <img src="/static/img/jukebox.png" alt="{% trans 'Jukebox logo' %}" width="156" height="40" />
+                <a href="{% url 'jukebox_web_index' %}">
+                    <img src="{% static 'img/jukebox.png' %}" alt="{% trans 'Jukebox logo' %}" width="156" height="40" />
                 </a>
             </div>
             <div id="profile">
@@ -31,11 +32,11 @@
                 <div class="login">
                     {% for backend in backends %}
                         <div>
-                            <a rel="nofollow" href="{% url socialauth_begin backend %}">
-                                <img src="/static/img/{{ backend }}.png" alt="{% blocktrans %}Login with your {{ backend }} account{% endblocktrans %}" title="{% blocktrans %}Login with your {{ backend }} account{% endblocktrans %}" />
+                            <a rel="nofollow" href="{% url 'social:begin' backend %}">
+                                <img src="{% static 'img/' %}{{ backend }}.png" alt="{% blocktrans %}Login with your {{ backend }} account{% endblocktrans %}" title="{% blocktrans %}Login with your {{ backend }} account{% endblocktrans %}" />
                             </a>
                         </div>
-                    {%  endfor %}
+                    {% endfor %}
                 </div>
             </div>
         </div>

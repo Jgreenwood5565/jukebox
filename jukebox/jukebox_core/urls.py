@@ -1,78 +1,34 @@
-# -*- coding: UTF-8 -*-
+from django.urls import path
 
-from django.conf.urls import patterns, url
-import views
+from . import views
+from .feeds import QueueFeed
 
-urlpatterns = patterns("",
-    url(
-        r"^api/v1/songs$",
-        views.songs.as_view(),
-        name="jukebox_api_songs"
-    ),
-    url(
-        r"^api/v1/songs/skip$",
-        views.songs_skip.as_view(),
-        name="jukebox_api_songs_skip"
-    ),
-    url(
-        r"^api/v1/songs/current",
+urlpatterns = [
+    path("api/v1/songs", views.songs.as_view(), name="jukebox_api_songs"),
+    path("api/v1/songs/skip", views.songs_skip.as_view(), name="jukebox_api_songs_skip"),
+    path(
+        "api/v1/songs/current",
         views.songs_current.as_view(),
-        name="jukebox_api_songs_current"
+        name="jukebox_api_songs_current",
     ),
-    url(
-        r"^api/v1/artists$",
-        views.artists.as_view(),
-        name="jukebox_api_artists"
-    ),
-    url(
-        r"^api/v1/albums$",
-        views.albums.as_view(),
-        name="jukebox_api_albums"
-    ),
-    url(
-        r"^api/v1/genres$",
-        views.genres.as_view(),
-        name="jukebox_api_genres"
-    ),
-    url(
-        r"^api/v1/years$",
-        views.years.as_view(),
-        name="jukebox_api_years"
-    ),
-    url(
-        r"^api/v1/history$",
-        views.history.as_view(),
-        name="jukebox_api_history"
-    ),
-    url(
-        r"^api/v1/history/my$",
-        views.history_my.as_view(),
-        name="jukebox_api_history_my"
-    ),
-    url(
-        r"^api/v1/favourites$",
-        views.favourites.as_view(),
-        name="jukebox_api_favourites"
-    ),
-    url(
-        r"^api/v1/favourites/(?P<song_id>[0-9]+)$",
+    path("api/v1/artists", views.artists.as_view(), name="jukebox_api_artists"),
+    path("api/v1/albums", views.albums.as_view(), name="jukebox_api_albums"),
+    path("api/v1/genres", views.genres.as_view(), name="jukebox_api_genres"),
+    path("api/v1/years", views.years.as_view(), name="jukebox_api_years"),
+    path("api/v1/history", views.history.as_view(), name="jukebox_api_history"),
+    path("api/v1/history/my", views.history_my.as_view(), name="jukebox_api_history_my"),
+    path("api/v1/favourites", views.favourites.as_view(), name="jukebox_api_favourites"),
+    path(
+        "api/v1/favourites/<int:song_id>",
         views.favourites_item.as_view(),
-        name="jukebox_api_favourites_item"
+        name="jukebox_api_favourites_item",
     ),
-
-    url(
-        r"^api/v1/queue$",
-        views.queue.as_view(),
-        name="jukebox_api_queue"
-    ),
-    url(
-        r"^api/v1/queue/(?P<song_id>[0-9]+)$",
+    path("api/v1/queue", views.queue.as_view(), name="jukebox_api_queue"),
+    path(
+        "api/v1/queue/<int:song_id>",
         views.queue_item.as_view(),
-        name="jukebox_api_queue_item"
+        name="jukebox_api_queue_item",
     ),
-    url(
-        r"^api/v1/ping$",
-        views.ping.as_view(),
-        name="jukebox_api_ping"
-    ),
-)
+    path("api/v1/ping", views.ping.as_view(), name="jukebox_api_ping"),
+    path("feed/", QueueFeed(), name="jukebox_feed"),
+]

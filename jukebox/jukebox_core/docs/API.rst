@@ -3,7 +3,10 @@ API
 
 Jukebox core provides a REST API for authenticated users to control the jukebox.
 Please register a Django User in the admin interface and use HTTP basic authentication for external API access.
-Alternatively the API is accessible for authenticated users sending a session key.
+Alternatively the API is accessible for authenticated users sending a session key. Requests authenticated by
+session must send the CSRF token in the ``X-CSRFToken`` header for POST and DELETE requests.
+
+Unauthenticated requests are rejected with status 401 or 403.
 
 Tests
 ======
@@ -16,6 +19,7 @@ GET methods
 ::
 
     /api/v1/songs
+    /api/v1/songs/current
     /api/v1/artists
     /api/v1/albums
     /api/v1/genres
@@ -58,6 +62,11 @@ List songs
 - year
 - genre
 - length
+
+**/api/v1/songs/current**
+
+Get the song currently playing including its voters and the seconds remaining (``remaining``).
+Returns an empty object if nothing has been played yet.
 
 **/api/v1/artists**
 
@@ -132,12 +141,12 @@ Get single play queue entry
 
 *Available sort options*
 
-- title  (default, asc)
+- title
 - artist
 - album
 - year
 - genre
-- created
+- created (default, desc)
 
 **/api/v1/favourites/[song_id]**
 
@@ -147,6 +156,10 @@ Get single favourite list entry
 
 Ping the api for session keepalive
 
+**/feed/**
+
+RSS feed containing the song that will be played next. Does not require authentication.
+
 POST methods
 ============
 
@@ -154,10 +167,12 @@ POST methods
 
     /api/v1/queue
     /api/v1/favourites
+    /api/v1/songs/skip
 
 **/api/v1/queue**
 
-Vote for song, add to queue if not yet in
+Vote for song, add to queue if not yet in. Responds with ``201`` and the song ``id`` and its vote ``count``,
+``400`` for an invalid id and ``404`` if the song doesn't exist.
 
 *Required post parameters*
 
@@ -165,11 +180,15 @@ Vote for song, add to queue if not yet in
 
 **/api/v1/favourites**
 
-Add song to favourite list
+Add song to favourite list. Responds with ``201`` if the song was added and ``200`` if it already was a favourite.
 
 *Required post parameters*
 
 - id (id of song to be added)
+
+**/api/v1/songs/skip**
+
+Skip the song currently playing. Responds with ``204``.
 
 DELETE methods
 ===============
@@ -181,7 +200,8 @@ DELETE methods
 
 **/api/v1/queue/[song_id]**
 
-Revoke vote for song, remove from queue if no more votes left
+Revoke vote for song, remove from queue if no more votes left. Responds with the song ``id`` and the remaining
+vote ``count``.
 
 **/api/v1/favourites/[song_id]**
 

@@ -1,41 +1,35 @@
-# -*- coding: UTF-8 -*-
-from django.core.management.base import BaseCommand
-from optparse import make_option
 import os
+
+from django.core.management.base import BaseCommand, CommandError
+
+# FileIndexer is imported from here by the jukebox_live_indexer plugin
 from jukebox.jukebox_core.utils import FileIndexer
 
 
 class Command(BaseCommand):
-    option_list = BaseCommand.option_list + (
-        make_option("--path", action="store", dest="path",
-                    help="Music library path to scan"),
-    )
+    help = "Add all music files below a directory to the jukebox library"
+
+    def add_arguments(self, parser):
+        parser.add_argument("--path", required=True, help="Music library path to scan")
 
     def handle(self, *args, **options):
-        if options["path"] is None:
-            print "Required arguments: path"
-            return
+        path = os.path.abspath(options["path"])
+        if not os.path.isdir(path):
+            raise CommandError(f"Path does not exist: {path}")
 
-        if not os.path.exists(options["path"]):
-            print "Path does not exist"
-            return
-
-        print "Indexing music in " + options["path"]
-        print "This may take a while"
-        self.index(options["path"], int(options["verbosity"]))
-
-    def index(self, path, verbosity):
-        if not path.endswith("/"):
-            path += "/"
+        self.stdout.write(f"Indexing music in {path}")
+        self.stdout.write("This may take a while")
 
         indexer = FileIndexer()
-
-        listing = os.listdir(path)
-        for filename in listing:
-            filename = path + filename
-            if os.path.isdir(filename):
-                self.index(filename + "/", verbosity)
-            elif filename.endswith(".mp3"):
+        verbosity = options["verbosity"]
+        added = 0
+        for root, dirs, files in os.walk(path):
+            dirs.sort()
+            for name in sorted(files):
+                filename = os.path.join(root, name)
                 if verbosity >= 2:
-                    print "Indexing file " + filename
-                indexer.index(filename)
+                    self.stdout.write(f"Indexing file {filename}")
+                if indexer.index(filename) is not None:
+                    added += 1
+
+        self.stdout.write(self.style.SUCCESS(f"Added {added} songs"))

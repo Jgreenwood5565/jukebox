@@ -1,460 +1,501 @@
-if (typeof gettext != "function") {
-    gettext = function(identifier) {
-        return identifier;
+(function ($) {
+    "use strict";
+
+    const gettext = typeof window.gettext === "function" ? window.gettext : (text) => text;
+
+    const PAGE_SIZE = 30;
+    const PING_INTERVAL = 60000;
+    const STATIC_URL = document.body.dataset.staticUrl || "/static/";
+
+    const HTML_ESCAPES = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+    };
+
+    // everything rendered into the page comes from ID3 tags or social
+    // network profiles, never insert it without escaping
+    function escapeHtml(value) {
+        return String(value === null || value === undefined ? "" : value)
+            .replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
     }
-}
 
-Music = {
-    pageNum: 1,
-    hasNextPage: true,
-    options: {},
-    searchOptions: {},
-    infiniteScrollActive: false,
-    sessionPing: 60000,
-    remaining: 0,
-    csrf_token: null,
+    function image(name) {
+        return STATIC_URL + "img/" + name;
+    }
 
-    init: function() {
-        Music.csrf_token = $('#csrf_token input[name="csrfmiddlewaretoken"]').val();
-        jQuery.ajaxSetup({
-            headers: {
-                'X-CSRFToken': Music.csrf_token
-            }
-        });
+    function icon(file, cls, id, label) {
+        return "<img src=\"" + image(file) + "\" class=\"" + cls + "\" data-id=\"" + escapeHtml(id) +
+            "\" alt=\"" + escapeHtml(label) + "\" title=\"" + escapeHtml(label) + "\" />";
+    }
 
-        $(".loadList").bind("click", function() {
-            Music.options = {};
-            Music.setActiveMenu($(this));
-            Music.loadList($(this).attr("href"));
-            return false;
-        });
+    function emptyCell() {
+        return "<td>&#160;</td>";
+    }
 
-        $("#searchform span.searchsubmit").bind("click", function() {
-            Music.options = {"search_term": $("input.searchterm").val()};
-            Music.loadList("/api/v1/songs");
-            Music.setActiveMenu($("#sidebar ul li a.loadSongs"));
-            return false;
-        });
-        $("#searchform").bind("submit", function() {
-            Music.options = {"search_term": $("input.searchterm").val()};
-            Music.loadList("/api/v1/songs");
-            Music.setActiveMenu($("#sidebar ul li a.loadSongs"));
-            return false;
-        });
+    function filterCell(cls, value, label) {
+        if (value === null || value === undefined) {
+            return emptyCell();
+        }
+        return "<td class=\"filter " + cls + "\" data-value=\"" + escapeHtml(value) + "\">" +
+            escapeHtml(label) + "</td>";
+    }
 
-        $("#searchdetailsform span.searchsubmit").bind("click", function() {
-            Music.options = Music.getSearchOptions();
-            Music.loadList("/api/v1/songs");
-            Music.setActiveMenu($("#sidebar ul li a.loadSongs"));
-            $("#searchoptions").click();
-            return false;
-        });
-        $("#searchdetailsform span.searchreset").bind("click", function() {
-            $("#search_title").val("");
-            $("#search_artist").val("");
-            $("#search_album").val("");
-            $("#search_genre").val("");
-            $("#search_year").val("");
-            return false;
-        });
-        $("#searchdetailsform").bind("submit", function() {
-            Music.options = Music.getSearchOptions();
-            Music.loadList("/api/v1/songs");
-            Music.setActiveMenu($("#sidebar ul li a.loadSongs"));
-            $("#searchoptions").click();
-            return false;
-        });
-        // chrome doesn't fire submit on #searchdetailsform -> dirty workaround
-        $("#search_title, #search_artist, #search_album, #search_album").bind("keydown", function() {
-            if (event.which == 13) {
-                Music.options = Music.getSearchOptions();
-                Music.loadList("/api/v1/songs");
-                Music.setActiveMenu($("#sidebar ul li a.loadSongs"));
-                $("#searchoptions").click();
-                return false;
-            }
-        });
+    function formatLength(length) {
+        if (length === null || length === undefined) {
+            return "";
+        }
+        const seconds = length % 60;
+        return Math.floor(length / 60) + ":" + (seconds < 10 ? "0" : "") + seconds;
+    }
 
-        $("#searchoptions").bind("click", function() {
-            if ($("#searchdetails:visible").length == 1) {
-                $(document).unbind("click.search");
-                $("#searchdetails").hide();
+    const cells = {
+        title: (item) => filterCell("search_title", item.title, item.title),
+        artist: (item) => filterCell("filter_artist", item.artist.id, item.artist.name),
+        album: (item) => filterCell("filter_album", item.album.id, item.album.title),
+        genre: (item) => filterCell("filter_genre", item.genre.id, item.genre.name),
+        year: (item) => filterCell("filter_year", item.year, item.year),
+        length: (item) => "<td>" + escapeHtml(formatLength(item.length)) + "</td>",
+        created: (item) => "<td>" + escapeHtml(item.created) + "</td>",
+        votes: (item) => {
+            let html = "<td class=\"voteCount\">";
+            if (item.votes > 0) {
+                if (item.users.length === item.votes) {
+                    html += "<div class=\"voteTooltip\"><ul>";
+                    item.users.forEach((user) => {
+                        html += "<li>" + escapeHtml(user.name) + "</li>";
+                    });
+                    html += "</ul></div>";
+                }
+                html += "<span class=\"count\">" + escapeHtml(item.votes) + "</span>";
             }
             else {
-                // reset all
-                $("#searchdetailsform span.searchreset").click();
+                html += escapeHtml(gettext("Autoplay"));
+            }
+            return html + "</td>";
+        }
+    };
 
-                // fill form by current search options
-                $.each(Music.searchOptions, function(key, value) {
-                    if (key != "genre_id" && value.substr(0, 1) == "(") {
-                        value = value.substr(1, value.length - 2);
-                    }
-                    switch (key) {
-                        case "title":
-                            $("#search_title").val(value);
-                            break;
-                        case "artist":
-                            $("#search_artist").val(value);
-                            break;
-                        case "album":
-                            $("#search_album").val(value);
-                            break;
-                        case "genre_id":
-                            $("#search_genre").val(value);
-                            break;
-                        case "year":
-                            $("#search_year").val(value);
-                            break;
-                    }
-                });
+    function column(label, cls, sort, cell) {
+        return {label: label, cls: cls, sort: sort, cell: cell};
+    }
 
-                $("#searchdetails").show();
-                $(document).bind("click.search", function(event) {
-                    if ($(event.target).closest("#searchdetails").length == 0 && $(event.target).closest("#searchoptions").length == 0) {
-                        $("#searchoptions").click();
-                    }
-                });
-            }
-        });
+    // columns shown for each list type returned by the API
+    const LISTS = {
+        "queue": {
+            rowClass: "row_queue",
+            voteLabel: gettext("Support vote"),
+            columns: [
+                column(gettext("Title"), "favourite_title", "title", cells.title),
+                column(gettext("Artist"), "favourite_artist", "artist", cells.artist),
+                column(gettext("Album"), "favourite_album", "album", cells.album),
+                column(gettext("Votes"), "favourite_genre", "votes", cells.votes),
+                column(gettext("First voted"), "favourite_added", "created", cells.created)
+            ]
+        },
+        "history": {
+            rowClass: "row_history",
+            voteLabel: gettext("Vote to play"),
+            columns: [
+                column(gettext("Title"), "favourite_title", "title", cells.title),
+                column(gettext("Artist"), "favourite_artist", "artist", cells.artist),
+                column(gettext("Album"), "favourite_album", "album", cells.album),
+                column(gettext("Votes"), "favourite_genre", null, cells.votes),
+                column(gettext("Date added"), "favourite_added", "created", cells.created)
+            ]
+        },
+        "favourites": {
+            rowClass: "row_favourites",
+            voteLabel: gettext("Vote to play"),
+            alwaysFavourite: true,
+            columns: [
+                column(gettext("Title"), "favourite_title", "title", cells.title),
+                column(gettext("Artist"), "favourite_artist", "artist", cells.artist),
+                column(gettext("Album"), "favourite_album", "album", cells.album),
+                column(gettext("Genre"), "favourite_genre", "genre", cells.genre),
+                column(gettext("Date added"), "favourite_added", "created", cells.created)
+            ]
+        },
+        "songs": {
+            rowClass: "row_songs",
+            voteLabel: gettext("Vote to play"),
+            columns: [
+                column(gettext("Title"), "song_title", "title", cells.title),
+                column(gettext("Artist"), "song_artist", "artist", cells.artist),
+                column(gettext("Album"), "song_album", "album", cells.album),
+                column(gettext("Genre"), "song_genre", "genre", cells.genre),
+                column(gettext("Year"), "song_year", "year", cells.year),
+                column(gettext("Length"), "song_length", "length", cells.length)
+            ]
+        },
+        "artists": {
+            rowClass: "row_artists",
+            columns: [
+                column(gettext("Name"), "name", "artist",
+                    (item) => filterCell("filter_artist", item.id, item.artist))
+            ]
+        },
+        "albums": {
+            rowClass: "row_albums",
+            columns: [
+                column(gettext("Title"), "album_title", "album",
+                    (item) => filterCell("filter_album", item.id, item.album))
+            ]
+        },
+        "genres": {
+            rowClass: "row_genres",
+            columns: [
+                column(gettext("Name"), "name", "genre",
+                    (item) => filterCell("filter_genre", item.id, item.genre))
+            ]
+        },
+        "years": {
+            rowClass: "row_years",
+            columns: [
+                column(gettext("Year"), "year", "year",
+                    (item) => filterCell("filter_year", item.year, item.year))
+            ]
+        }
+    };
+    LISTS["history/my"] = LISTS.history;
 
-        $("#profile").bind("click", function() {
-            if ($("#accountoptions:visible").length == 1) {
-                $(document).unbind("click.account");
-                $("#accountoptions").hide();
-            }
-            else {
-                $("#accountoptions").show();
-                $(document).bind("click.account", function(event) {
-                    if ($(event.target).closest("#accountoptions").length == 0 && $(event.target).closest("#profile").length == 0) {
-                        $("#profile").click();
-                    }
-                });
-            }
-        });
+    const Music = {
+        url: null,
+        pageNum: 1,
+        hasNextPage: false,
+        loading: false,
+        generation: 0,
+        options: {},
+        searchOptions: {},
+        remaining: 0,
+        currentSongTimer: null,
 
-        $("#main table.list td.filter").live("click", function() {
-            var value = $(this).attr("data-value");
-            if ($(this).hasClass("filter_artist")) {
-                Music.options = {"filter_artist_id": value};
-            }
-            else if ($(this).hasClass("filter_album")) {
-                Music.options = {"filter_album_id": value};
-            }
-            else if ($(this).hasClass("filter_genre")) {
-                Music.options = {"filter_genre": value};
-            }
-            else if ($(this).hasClass("filter_year")) {
-                Music.options = {"filter_year": value};
-            }
-            else if ($(this).hasClass("search_title")) {
-                Music.options = {"search_title": value};
-            }
-            Music.loadList("/api/v1/songs");
-            Music.setActiveMenu($("#sidebar ul li a.loadSongs"));
-            return false;
-        });
-
-        $("#main table.list th").live("click", function() {
-            if ($(this).hasClass("sort_asc")) {
-                Music.options.order_direction = "desc";
-            }
-            else {
-                Music.options.order_direction = "asc";
-            }
-
-            if ($(this).hasClass("sort_title")) {
-                Music.options.order_by = "title";
-            }
-            else if ($(this).hasClass("sort_artist")) {
-                Music.options.order_by = "artist";
-            }
-            else if ($(this).hasClass("sort_album")) {
-                Music.options.order_by = "album";
-            }
-            else if ($(this).hasClass("sort_genre")) {
-                Music.options.order_by = "genre";
-            }
-            else if ($(this).hasClass("sort_year")) {
-                Music.options.order_by = "year";
-            }
-            else if ($(this).hasClass("sort_length")) {
-                Music.options.order_by = "length";
-            }
-            else if ($(this).hasClass("sort_created")) {
-                Music.options.order_by = "created";
-            }
-            else if ($(this).hasClass("sort_votes")) {
-                Music.options.order_by = "votes";
-            }
-
-            switch ($(this).closest("tr").attr("class")) {
-                case "queue":
-                    Music.loadList("/api/v1/queue");
-                    break;
-                case "history":
-                    Music.loadList("/api/v1/history");
-                    break;
-                case "history_my":
-                    Music.loadList("/api/v1/history/my");
-                    break;
-                case "favourites":
-                    Music.loadList("/api/v1/favourites");
-                    break;
-                case "songs":
-                    Music.loadList("/api/v1/songs");
-                    break;
-                case "artists":
-                    Music.loadList("/api/v1/artists");
-                    break;
-                case "albums":
-                    Music.loadList("/api/v1/albums");
-                    break;
-                case "genres":
-                    Music.loadList("/api/v1/genres");
-                    break;
-                case "years":
-                    Music.loadList("/api/v1/years");
-                    break;
-            }
-
-            return false;
-        });
-
-        $("#main table.list img.queue_add").live("click", function() {
-            $.ajax({
-                url: "/api/v1/queue",
-                type: "POST",
-                data: {
-                    "id": $(this).attr("data-id")
-                },
-                success: function(data) {
-                    var item = $("img.queue_add[data-id=" + data.id + "]");
-                    item.attr("src", "/static/img/queue_active.png");
-                    item.removeClass("queue_add");
-                    item.addClass("queue_remove");
-                    item.attr("id", item.attr("id").replace(/add/, "remove"));
-                    item.attr("alt", gettext("Revoke vote"));
-                    item.attr("title", gettext("Revoke vote"));
-                    item.closest("tr").find(".voteCount").html(data.count);
+        init: function () {
+            $.ajaxSetup({
+                type: "GET",
+                cache: false,
+                dataType: "json",
+                headers: {
+                    "X-CSRFToken": $("#csrf_token input[name=\"csrfmiddlewaretoken\"]").val()
                 }
             });
-            return false;
-        });
 
-        $("#main table.list img.queue_remove").live("click", function() {
-            var success = null;
-            if ($(this).closest("tr.row_queue").length == 0) {
-                success = function(data) {
-                    var item = $("img.queue_remove[data-id=" + data.id + "]");
-                    item.attr("src", "/static/img/queue.png");
-                    item.removeClass("queue_remove");
-                    item.addClass("queue_add");
-                    item.attr("alt", gettext("Vote to play"));
-                    item.attr("title", gettext("Vote to play"));
-                };
+            // session expired (e.g. after standby), the page redirects to the login
+            $(document).on("ajaxError", (event, xhr) => {
+                if (xhr.status === 401 || xhr.status === 403) {
+                    window.location.reload();
+                }
+            });
+
+            $(".loadList").on("click", function () {
+                Music.options = {};
+                Music.setActiveMenu($(this));
+                Music.loadList($(this).attr("href"));
+                return false;
+            });
+
+            Music.initSearch();
+            Music.initMenus();
+            Music.initList();
+
+            $(window).on("scroll", Music.loadOnScroll);
+
+            Music.getCurrentSong();
+            Music.ping();
+            Music.loadList("/api/v1/queue");
+            Music.setActiveMenu($("#sidebar a.loadQueue"));
+        },
+
+        showSongs: function (options) {
+            Music.options = options;
+            Music.loadList("/api/v1/songs");
+            Music.setActiveMenu($("#sidebar a.loadSongs"));
+        },
+
+        initSearch: function () {
+            $("#searchform").on("submit", () => {
+                Music.showSongs({"search_term": $("input.searchterm").val()});
+                return false;
+            });
+            $("#searchform span.searchsubmit").on("click", () => {
+                $("#searchform").trigger("submit");
+                return false;
+            });
+
+            const submitDetails = () => {
+                Music.showSongs(Music.getSearchOptions());
+                Music.toggleSearchDetails(false);
+                return false;
+            };
+            $("#searchdetailsform").on("submit", submitDetails);
+            $("#searchdetailsform span.searchsubmit").on("click", submitDetails);
+            // not every browser submits a form without visible submit button
+            $("#search_title, #search_artist, #search_album").on("keydown", (event) => {
+                if (event.key === "Enter") {
+                    return submitDetails();
+                }
+            });
+            $("#searchdetailsform span.searchreset").on("click", () => {
+                Music.resetSearchDetails();
+                return false;
+            });
+
+            $("#searchoptions").on("click", () => {
+                Music.toggleSearchDetails(!$("#searchdetails").is(":visible"));
+            });
+        },
+
+        toggleSearchDetails: function (show) {
+            $(document).off("click.search");
+            if (!show) {
+                $("#searchdetails").hide();
+                return;
             }
-            else {
-                success = function(data) {
-                    var item = $("img.queue_remove[data-id=" + data.id + "]");
 
-                    if (data.count == 0) {
-                        item.closest("tr").fadeOut(1000, function() {
-                            item.closest("tr").remove();
+            // fill form by current search options
+            Music.resetSearchDetails();
+            const search = Music.searchOptions;
+            const unbracket = (value) => String(value).replace(/^\((.*)\)$/, "$1");
+            if (search.title) {
+                $("#search_title").val(unbracket(search.title));
+            }
+            if (search.artist) {
+                $("#search_artist").val(unbracket(search.artist));
+            }
+            if (search.album) {
+                $("#search_album").val(unbracket(search.album));
+            }
+            if (search.genre_id) {
+                $("#search_genre").val(search.genre_id);
+            }
+            if (search.year) {
+                $("#search_year").val(search.year);
+            }
+
+            $("#searchdetails").show();
+            $(document).on("click.search", (event) => {
+                if ($(event.target).closest("#searchdetails, #searchoptions").length === 0) {
+                    Music.toggleSearchDetails(false);
+                }
+            });
+        },
+
+        resetSearchDetails: function () {
+            $("#search_title, #search_artist, #search_album, #search_genre, #search_year").val("");
+        },
+
+        initMenus: function () {
+            $("#profile").on("click", () => {
+                $(document).off("click.account");
+                if ($("#accountoptions").is(":visible")) {
+                    $("#accountoptions").hide();
+                    return;
+                }
+
+                $("#accountoptions").show();
+                $(document).on("click.account", (event) => {
+                    if ($(event.target).closest("#accountoptions, #profile").length === 0) {
+                        $(document).off("click.account");
+                        $("#accountoptions").hide();
+                    }
+                });
+            });
+        },
+
+        initList: function () {
+            const main = $("#main");
+
+            main.on("click", "table.list td.filter", function () {
+                const cell = $(this);
+                const value = cell.attr("data-value");
+                const filters = {
+                    filter_artist: "filter_artist_id",
+                    filter_album: "filter_album_id",
+                    filter_genre: "filter_genre",
+                    filter_year: "filter_year",
+                    search_title: "search_title"
+                };
+                const options = {};
+                $.each(filters, (cls, option) => {
+                    if (cell.hasClass(cls)) {
+                        options[option] = value;
+                    }
+                });
+                Music.showSongs(options);
+                return false;
+            });
+
+            main.on("click", "table.list th[data-sort]", function () {
+                Music.options.order_direction = $(this).hasClass("sort_asc") ? "desc" : "asc";
+                Music.options.order_by = $(this).attr("data-sort");
+                Music.loadList(Music.url);
+                return false;
+            });
+
+            main.on("click", "table.list img.queue_add", function () {
+                $.ajax({
+                    url: "/api/v1/queue",
+                    type: "POST",
+                    data: {"id": $(this).attr("data-id")}
+                }).done((data) => {
+                    const items = $("img.queue_add[data-id=\"" + data.id + "\"]");
+                    Music.setIcon(items, "queue_active.png", "queue_add", "queue_remove",
+                        gettext("Revoke vote"));
+                    items.closest("tr").find(".voteCount .count").text(data.count);
+                });
+                return false;
+            });
+
+            main.on("click", "table.list img.queue_remove", function () {
+                const inQueue = $(this).closest("tr.row_queue").length > 0;
+                $.ajax({
+                    url: "/api/v1/queue/" + encodeURIComponent($(this).attr("data-id")),
+                    type: "DELETE"
+                }).done((data) => {
+                    const items = $("img.queue_remove[data-id=\"" + data.id + "\"]");
+                    if (inQueue && data.count === 0) {
+                        items.closest("tr").fadeOut(1000, function () {
+                            $(this).remove();
                         });
                         return;
                     }
-                    item.attr("src", "/static/img/queue.png");
-                    item.removeClass("queue_remove");
-                    item.addClass("queue_add");
-                    item.attr("alt", gettext("Support vote"));
-                    item.attr("title", gettext("Support vote"));
-                    item.closest("tr").find(".voteCount").html(data.count);
-                };
-            }
-
-            $.ajax({
-                url: "/api/v1/queue/" + $(this).attr("data-id"),
-                type: "DELETE",
-                success: function(data) {
-                    success(data);
-                }
+                    Music.setIcon(items, "queue.png", "queue_remove", "queue_add",
+                        inQueue ? gettext("Support vote") : gettext("Vote to play"));
+                    items.closest("tr").find(".voteCount .count").text(data.count);
+                });
+                return false;
             });
-            return false;
-        });
 
-        $("#main table.list img.favourite_add").live("click", function() {
-            $.ajax({
-                url: "/api/v1/favourites",
-                type: "POST",
-                data: {
-                    "id": $(this).attr("data-id")
-                },
-                success: function(data) {
-                    var item = $("img.favourite_add[data-id=" + data.id + "]");
-                    item.attr("src", "/static/img/favourite_active.png");
-                    item.removeClass("favourite_add");
-                    item.addClass("favourite_remove");
-                    item.attr("alt", gettext("Remove from favourites"));
-                    item.attr("title", gettext("Remove from favourites"));
-                }
+            main.on("click", "table.list img.favourite_add", function () {
+                $.ajax({
+                    url: "/api/v1/favourites",
+                    type: "POST",
+                    data: {"id": $(this).attr("data-id")}
+                }).done((data) => {
+                    Music.setIcon($("img.favourite_add[data-id=\"" + data.id + "\"]"),
+                        "favourite_active.png", "favourite_add", "favourite_remove",
+                        gettext("Remove from favourites"));
+                });
+                return false;
             });
-            return false;
-        });
 
-        $("#main table.list img.favourite_remove").live("click", function() {
-            var success = null;
-            if ($(this).closest("tr.row_favourites").length == 0) {
-                success = function(data) {
-                    var item = $("img.favourite_remove[data-id=" + data.id + "]");
-                    item.attr("src", "/static/img/favourite.png");
-                    item.removeClass("favourite_remove");
-                    item.addClass("favourite_add");
-                    item.attr("alt", gettext("Add to favourites"));
-                    item.attr("title", gettext("Add to favourites"));
-                };
-            }
-            else {
-                success = function(data) {
-                    var item = $("img.favourite_remove[data-id=" + data.id + "]");
-                    item.closest("tr").fadeOut(1000, function() {
-                        item.closest("tr").remove();
-                    });
-                };
-            }
-
-            $.ajax({
-                url: "/api/v1/favourites/" + $(this).attr("data-id"),
-                type: "DELETE",
-                success: function(data) {
-                    success(data);
-                }
+            main.on("click", "table.list img.favourite_remove", function () {
+                const inFavourites = $(this).closest("tr.row_favourites").length > 0;
+                $.ajax({
+                    url: "/api/v1/favourites/" + encodeURIComponent($(this).attr("data-id")),
+                    type: "DELETE"
+                }).done((data) => {
+                    const items = $("img.favourite_remove[data-id=\"" + data.id + "\"]");
+                    if (inFavourites) {
+                        items.closest("tr").fadeOut(1000, function () {
+                            $(this).remove();
+                        });
+                        return;
+                    }
+                    Music.setIcon(items, "favourite.png", "favourite_remove", "favourite_add",
+                        gettext("Add to favourites"));
+                });
+                return false;
             });
-            return false;
-        });
 
-        $("td.voteCount").live({
-            mouseenter: function() {
-                var element = $(this);
-                var tooltip = $(this).find('div.voteTooltip');
-                if (tooltip.length == 1) {
-                    tooltip.css('left', element.offset().left - $(window).scrollLeft() + 50);
-                    tooltip.css('top', element.offset().top - $(window).scrollTop() + 10);
-                    tooltip.show();
-                }
-            },
-            mouseleave: function() {
-                var tooltip = $(this).find('div.voteTooltip');
-                if (tooltip.length == 1) {
-                    tooltip.hide();
-                }
-            }
-        });
+            main.on("mouseenter", "td.voteCount", function () {
+                const offset = $(this).offset();
+                $(this).find("div.voteTooltip").css({
+                    left: offset.left - $(window).scrollLeft() + 50,
+                    top: offset.top - $(window).scrollTop() + 10
+                }).show();
+            });
+            main.on("mouseleave", "td.voteCount", function () {
+                $(this).find("div.voteTooltip").hide();
+            });
+        },
 
-        $.ajaxSetup({
-            type: "GET",
-            cache: false,
-            dataType: "json"
-        });
+        setIcon: function (items, file, removeClass, addClass, label) {
+            items.attr({src: image(file), alt: label, title: label})
+                .removeClass(removeClass)
+                .addClass(addClass);
+        },
 
-        Music.getCurrentSong();
-        Music.ping();
-        Music.loadList("/api/v1/queue");
-        Music.setActiveMenu($("#sidebar ul li a.loadQueue"));
-    },
+        ping: function () {
+            $.ajax({url: "/api/v1/ping"}).always(() => {
+                setTimeout(Music.ping, PING_INTERVAL);
+            });
+        },
 
-    ping: function() {
-        $.ajax({
-            url: "/api/v1/ping",
-            success: function() {
-                setTimeout("Music.ping()", Music.sessionPing);
-            }
-        });
-    },
-
-    getCurrentSong: function() {
-         $.ajax({
-            url: "/api/v1/songs/current",
-            success: function(data) {
+        getCurrentSong: function () {
+            clearTimeout(Music.currentSongTimer);
+            $.ajax({url: "/api/v1/songs/current"}).done((data) => {
                 if ("id" in data) {
-                    $('#currentSong strong').show();
-                    $('#currentSong span.songTitle').html(data.artist.name + " - " + data.title);
+                    $("#currentSong strong").show();
+                    $("#currentSong span.songTitle").text(data.artist.name + " - " + data.title);
                     Music.remaining = data.remaining;
                     Music.updateTimeLeft();
                 }
                 else {
-                    $('#currentSong strong').hide();
+                    $("#currentSong strong").hide();
+                    Music.currentSongTimer = setTimeout(Music.getCurrentSong, 10000);
                 }
-            }
-        });
-    },
+            }).fail(() => {
+                Music.currentSongTimer = setTimeout(Music.getCurrentSong, 10000);
+            });
+        },
 
-    updateTimeLeft: function() {
-        if (0 == Music.remaining) {
-            $('#currentSong span.timeRemaining').hide();
-            setTimeout("Music.getCurrentSong()", 1000);
-            return;
-        }
-        else if (Music.remaining > 0) {
-            var minutes = parseInt(Music.remaining / 60);
-            var secondsInt = Music.remaining % 60;
-            var seconds = secondsInt.toString();
-            if (secondsInt < 10) {
-                seconds = "0" + seconds;
+        updateTimeLeft: function () {
+            const element = $("#currentSong span.timeRemaining");
+            if (Music.remaining <= 0) {
+                // song is over, poll quickly until the player picked the next one
+                element.hide();
+                Music.currentSongTimer = setTimeout(
+                    Music.getCurrentSong, Music.remaining > -30 ? 2000 : 10000);
+                return;
             }
-            $('#currentSong span.timeRemaining').show();
-            $('#currentSong span.timeRemaining').html("(" + minutes + ":" + seconds + ")");
+
+            element.text("(" + formatLength(Music.remaining) + ")").show();
             Music.remaining--;
-        }
-        setTimeout("Music.updateTimeLeft()", 1000);
-    },
+            Music.currentSongTimer = setTimeout(Music.updateTimeLeft, 1000);
+        },
 
-    getSearchOptions: function() {
-        var options = {};
+        getSearchOptions: function () {
+            const options = {};
+            const fields = {
+                search_title: "#search_title",
+                search_artist: "#search_artist",
+                search_album: "#search_album",
+                filter_genre: "#search_genre",
+                filter_year: "#search_year"
+            };
+            $.each(fields, (option, selector) => {
+                const value = $(selector).val();
+                if (value) {
+                    options[option] = value;
+                }
+            });
+            return options;
+        },
 
-        var value = $("#search_title").val();
-        if (value.length > 0) {
-            options.search_title = value;
-        }
-        var value = $("#search_artist").val();
-        if (value.length > 0) {
-            options.search_artist = value;
-        }
-        var value = $("#search_album").val();
-        if (value.length > 0) {
-            options.search_album = value;
-        }
-        var item = $("#search_genre").find("option:selected");
-        if (item.length > 0 && item.val().length > 0) {
-            options.filter_genre = item.val();
-        }
-        var item = $("#search_year").find("option:selected");
-        if (item.length > 0 && item.val().length > 0) {
-            options.filter_year = item.val();
-        }
+        setActiveMenu: function (item) {
+            $("#sidebar li").removeClass("active");
+            item.closest("li").addClass("active");
+        },
 
-        return options;
-    },
+        loadList: function (url) {
+            const generation = ++Music.generation;
+            Music.url = url;
+            Music.pageNum = 1;
+            Music.hasNextPage = false;
+            Music.loading = true;
+            Music.searchOptions = {};
+            Music.resetSearchDetails();
 
-    setActiveMenu: function(item) {
-        $("#sidebar").find("li").removeClass("active");
-        item.closest("li").addClass("active");
-    },
+            Music.options.page = Music.pageNum;
+            Music.options.count = PAGE_SIZE;
 
-    loadList: function(url) {
-        Music.pageNum = 1;
-        Music.hasNextPage = false;
-        Music.searchOptions = {};
-        $("#searchdetailsform span.searchreset").click();
-
-        // build options
-        Music.options.page = Music.pageNum;
-        Music.options.count = 30;
-
-        $.ajax({
-            url: url,
-            data: Music.options,
-            success: function(data) {
-                $(window).unbind("scroll");
+            $.ajax({url: url, data: Music.options}).done((data) => {
+                if (generation !== Music.generation) {
+                    return;
+                }
                 $(window).scrollTop(0);
 
                 Music.hasNextPage = data.hasNextPage;
@@ -463,439 +504,111 @@ Music = {
                     $("#main table.list tbody").append(Music.renderData(data));
                 }
                 else {
-                    $("#main").html("<div class=\"noContent\">" + gettext("No data found") + "</div>");
+                    $("#main").html(
+                        "<div class=\"noContent\">" + escapeHtml(gettext("No data found")) + "</div>");
                 }
 
                 // set search term - don't iterate to get correct order
                 Music.searchOptions = data.search;
-                terms = [];
-                if (data.search.title) {
-                    terms.push("title:" + data.search.title);
-                }
-                if (data.search.artist) {
-                    terms.push("artist:" + data.search.artist);
-                }
-                if (data.search.album) {
-                    terms.push("album:" + data.search.album);
-                }
-                if (data.search.genre) {
-                    terms.push("genre:" + data.search.genre);
-                }
-                if (data.search.year) {
-                    terms.push("year:" + data.search.year);
-                }
+                const terms = [];
+                ["title", "artist", "album", "genre", "year"].forEach((key) => {
+                    if (data.search[key]) {
+                        terms.push(key + ":" + data.search[key]);
+                    }
+                });
                 if (data.search.term) {
                     terms.push(data.search.term);
                 }
                 $("input.searchterm").val(terms.join(" "));
-
-                // load data until page is populated
-                if (Music.hasNextPage && Music.getScrollHeight() <= $(document).height()) {
-                    $(window).unbind("scroll");
-                    Music.loadItems(url, Music.options);
+            }).always(() => {
+                if (generation === Music.generation) {
+                    Music.loading = false;
+                    Music.loadOnScroll();
                 }
+            });
+        },
+
+        loadOnScroll: function () {
+            const scrolled = $(window).scrollTop() + $(window).height();
+            if (!Music.loading && Music.hasNextPage && scrolled > $(document).height() * 0.8) {
+                Music.loadNextPage();
             }
-        });
-    },
+        },
 
-    loadOnScroll: function(event) {
-        if (Music.infiniteScrollActive === true) {
-            return false;
-        }
+        loadNextPage: function () {
+            const generation = Music.generation;
+            Music.loading = true;
+            Music.pageNum++;
+            Music.options.page = Music.pageNum;
 
-        if (Music.hasNextPage && Music.getScrollHeight() > Music.getDocumentHeight()) {
-            $(window).unbind("scroll");
-            Music.loadItems(event.data.url, event.data.options);
-        }
-    },
-
-    getScrollHeight: function() {
-        return $(window).scrollTop() + $(window).height();
-    },
-
-    getDocumentHeight: function() {
-        return $(document).height() - $(document).height() * 0.2;
-    },
-
-    loadItems: function(url, options) {
-        if (Music.hasNextPage === false) {
-            return false;
-        }
-
-        if (typeof options == "undefined") {
-            options = {};
-        }
-
-        Music.infiniteScrollActive = true;
-        Music.pageNum = Music.pageNum + 1;
-
-        options.page = Music.pageNum;
-        options.count = 30;
-
-        $.ajax({
-            url: url.replace(/\[page\]/, Music.pageNum),
-            data: options,
-            success: function(data) {
+            $.ajax({url: Music.url, data: Music.options}).done((data) => {
+                if (generation !== Music.generation) {
+                    return;
+                }
                 Music.hasNextPage = data.hasNextPage;
                 $("#main table.list tbody").append(Music.renderData(data));
-
-                if (Music.hasNextPage) {
-                    $(window).bind("scroll", {url: url, options: options}, Music.loadOnScroll);
+            }).always(() => {
+                if (generation === Music.generation) {
+                    Music.loading = false;
+                    // keep loading until the page is filled
+                    Music.loadOnScroll();
                 }
-                Music.infiniteScrollActive = false;
-            }
-        });
-    },
+            });
+        },
 
-    getOrderClass: function(field, data) {
-        for (var key in data.order) {
-            var item = data.order[key];
-            if (item.field == field) {
-                switch (item.direction) {
-                    case "asc":
-                        return " sort_asc";
-                    case "desc":
-                        return " sort_desc";
+        getOrderClass: function (field, data) {
+            const order = data.order.find((item) => item.field === field);
+            if (order && (order.direction === "asc" || order.direction === "desc")) {
+                return " sort_" + order.direction;
+            }
+            return "";
+        },
+
+        renderTable: function (data) {
+            const list = LISTS[data.type];
+            let html = "<table class=\"list\"><thead><tr>";
+            if (list.voteLabel) {
+                html += "<th class=\"options\">&#160;</th>";
+            }
+            list.columns.forEach((col) => {
+                if (col.sort) {
+                    html += "<th class=\"" + col.cls + " sort_" + col.sort +
+                        Music.getOrderClass(col.sort, data) + "\" data-sort=\"" + col.sort + "\">";
                 }
-            }
+                else {
+                    html += "<th class=\"" + col.cls + "\">";
+                }
+                html += escapeHtml(col.label) + "</th>";
+            });
+            return html + "</tr></thead><tbody></tbody></table>";
+        },
+
+        renderData: function (data) {
+            const list = LISTS[data.type];
+            let html = "";
+            data.itemList.forEach((item) => {
+                html += "<tr class=\"" + list.rowClass + "\">";
+                if (list.voteLabel) {
+                    html += "<td>";
+                    html += item.queued
+                        ? icon("queue_active.png", "queue_remove", item.id, gettext("Revoke vote"))
+                        : icon("queue.png", "queue_add", item.id, list.voteLabel);
+                    html += item.favourite || list.alwaysFavourite
+                        ? icon("favourite_active.png", "favourite_remove", item.id,
+                            gettext("Remove from favourites"))
+                        : icon("favourite.png", "favourite_add", item.id,
+                            gettext("Add to favourites"));
+                    html += "</td>";
+                }
+                list.columns.forEach((col) => {
+                    html += col.cell(item);
+                });
+                html += "</tr>";
+            });
+            return html;
         }
-        return "";
-    },
+    };
 
-    renderTable: function(data) {
-        var html = "<table class=\"list\"><thead>";
-
-        switch (data.type) {
-            case "queue":
-                html+= "<tr class=\"queue\">";
-                html+= "<th class=\"options\">&#160;</th>";
-                html+= "<th class=\"favourite_title sort_title" + Music.getOrderClass("title", data) + "\">" + gettext("Title") + "</th>";
-                html+= "<th class=\"favourite_artist sort_artist" + Music.getOrderClass("artist", data) + "\">" + gettext("Artist") + "</th>";
-                html+= "<th class=\"favourite_album sort_album" + Music.getOrderClass("album", data) + "\">" + gettext("Album") + "</th>";
-                html+= "<th class=\"favourite_genre sort_votes" + Music.getOrderClass("votes", data) + "\">" + gettext("Votes") + "</th>";
-                html+= "<th class=\"favourite_added sort_created" + Music.getOrderClass("created", data) + "\">" + gettext("First voted") + "</th>";
-                break;
-            case "history":
-                html+= "<tr class=\"history\">";
-                html+= "<th class=\"options\">&#160;</th>";
-                html+= "<th class=\"favourite_title sort_title" + Music.getOrderClass("title", data) + "\">" + gettext("Title") + "</th>";
-                html+= "<th class=\"favourite_artist sort_artist" + Music.getOrderClass("artist", data) + "\">" + gettext("Artist") + "</th>";
-                html+= "<th class=\"favourite_album sort_album" + Music.getOrderClass("album", data) + "\">" + gettext("Album") + "</th>";
-                html+= "<th class=\"favourite_genre sort_genre" + Music.getOrderClass("votes", data) + "\">" + gettext("Votes") + "</th>";
-                html+= "<th class=\"favourite_added sort_created" + Music.getOrderClass("created", data) + "\">" + gettext("Date added") + "</th>";
-                break;
-            case "history/my":
-                html+= "<tr class=\"history_my\">";
-                html+= "<th class=\"options\">&#160;</th>";
-                html+= "<th class=\"favourite_title sort_title" + Music.getOrderClass("title", data) + "\">" + gettext("Title") + "</th>";
-                html+= "<th class=\"favourite_artist sort_artist" + Music.getOrderClass("artist", data) + "\">" + gettext("Artist") + "</th>";
-                html+= "<th class=\"favourite_album sort_album" + Music.getOrderClass("album", data) + "\">" + gettext("Album") + "</th>";
-                html+= "<th class=\"favourite_genre sort_genre" + Music.getOrderClass("votes", data) + "\">" + gettext("Votes") + "</th>";
-                html+= "<th class=\"favourite_added sort_created" + Music.getOrderClass("created", data) + "\">" + gettext("Date added") + "</th>";
-                break;
-            case "favourites":
-                html+= "<tr class=\"favourites\">";
-                html+= "<th class=\"options\">&#160;</th>";
-                html+= "<th class=\"favourite_title sort_title" + Music.getOrderClass("title", data) + "\">" + gettext("Title") + "</th>";
-                html+= "<th class=\"favourite_artist sort_artist" + Music.getOrderClass("artist", data) + "\">" + gettext("Artist") + "</th>";
-                html+= "<th class=\"favourite_album sort_album" + Music.getOrderClass("album", data) + "\">" + gettext("Album") + "</th>";
-                html+= "<th class=\"favourite_genre sort_genre" + Music.getOrderClass("genre", data) + "\">" + gettext("Genre") + "</th>";
-                html+= "<th class=\"favourite_added sort_created" + Music.getOrderClass("created", data) + "\">" + gettext("Date added") + "</th>";
-                break;
-            case "songs":
-                html+= "<tr class=\"songs\">";
-                html+= "<th class=\"options\">&#160;</th>";
-                html+= "<th class=\"song_title sort_title" + Music.getOrderClass("title", data) + "\">" + gettext("Title") + "</th>";
-                html+= "<th class=\"song_artist sort_artist" + Music.getOrderClass("artist", data) + "\">" + gettext("Artist") + "</th>";
-                html+= "<th class=\"song_album sort_album" + Music.getOrderClass("album", data) + "\">" + gettext("Album") + "</th>";
-                html+= "<th class=\"song_genre sort_genre" + Music.getOrderClass("genre", data) + "\">" + gettext("Genre") + "</th>";
-                html+= "<th class=\"song_year sort_year" + Music.getOrderClass("year", data) + "\">" + gettext("Year") + "</th>";
-                html+= "<th class=\"song_length sort_length" + Music.getOrderClass("length", data) + "\">" + gettext("Length") + "</th>";
-                break;
-            case "artists":
-                html+= "<tr class=\"artists\">";
-                html+= "<th class=\"name sort_artist" + Music.getOrderClass("artist", data) + "\">" + gettext("Name") + "</th>";
-                break;
-            case "albums":
-                html+= "<tr class=\"albums\">";
-                html+= "<th class=\"album_title sort_album" + Music.getOrderClass("album", data) + "\">" + gettext("Title") + "</th>";
-                break;
-            case "genres":
-                html+= "<tr class=\"genres\">";
-                html+= "<th class=\"name sort_genre" + Music.getOrderClass("genre", data) + "\">" + gettext("Name") + "</th>";
-                break;
-            case "years":
-                html+= "<tr class=\"years\">";
-                html+= "<th class=\"year sort_year" + Music.getOrderClass("year", data) + "\">" + gettext("Year") + "</th>";
-                break;
-        }
-        $(window).bind("scroll", {url: "/api/v1/" + data.type}, Music.loadOnScroll);
-        html+= "</tr></thead><tbody></tbody></table>";
-
-        return html;
-    },
-
-    renderData: function(data) {
-        var html = "";
-        $.each(data.itemList, function(index, item) {
-            switch (data.type) {
-                case "queue":
-                    html+= "<tr class=\"row_queue\">";
-                    html+= "<td>";
-                    if (item.queued) {
-                        html+= "<img src=\"/static/img/queue_active.png\" class=\"queue_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Revoke vote") + "\" title=\"" + gettext("Revoke vote") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/queue.png\" class=\"queue_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Support vote") + "\" title=\"" + gettext("Support vote") + "\" />";
-                    }
-                    if (item.favourite) {
-                        html+= "<img src=\"/static/img/favourite_active.png\" class=\"favourite_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Remove from favourites") + "\" title=\"" + gettext("Remove from favourites") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/favourite.png\" class=\"favourite_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Add to favourites") + "\" title=\"" + gettext("Add to favourites") + "\" />";
-                    }
-                    html+= "</td>";
-
-                    // title
-                    if (item.title != null) {
-                        html+= "<td class=\"filter search_title\" data-value=\"" + item.title + "\">" + item.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // artist
-                    if (item.artist.id != null) {
-                        html+= "<td class=\"filter filter_artist\" data-value=\"" + item.artist.id + "\">" + item.artist.name + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // album
-                    if (item.album.id != null) {
-                        html+= "<td class=\"filter filter_album\" data-value=\"" + item.album.id + "\">" + item.album.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    html+= "<td class=\"voteCount\">";
-                    if (item.votes > 0) {
-                        if (item.users.length == item.votes) {
-                            html+= "<div class=\"voteTooltip\"><ul>";
-                            for (var key in item.users) {
-                                var user = item.users[key];
-                                html+= "<li>" + user.name + "</li>"
-                            }
-                            html+= "</ul></div>";
-                        }
-                        html+= item.votes;
-                    }
-                    else {
-                        html+= gettext("Autoplay");
-                    }
-                    html+= "</td>";
-
-                    html+= "<td>" + item.created + "</td>";
-                    break;
-                case "history":
-                case "history/my":
-                    html+= "<tr class=\"row_history\">";
-                    html+= "<td>";
-                    if (item.queued) {
-                        html+= "<img src=\"/static/img/queue_active.png\" class=\"queue_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Revoke vote") + "\" title=\"" + gettext("Revoke vote") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/queue.png\" class=\"queue_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Vote to play") + "\" title=\"" + gettext("Vote to play") + "\" />";
-                    }
-                    if (item.favourite) {
-                        html+= "<img src=\"/static/img/favourite_active.png\" class=\"favourite_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Remove from favourites") + "\" title=\"" + gettext("Remove from favourites") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/favourite.png\" class=\"favourite_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Add to favourites") + "\" title=\"" + gettext("Add to favourites") + "\" />";
-                    }
-                    html+= "</td>";
-
-                    // title
-                    if (item.title != null) {
-                        html+= "<td class=\"filter search_title\" data-value=\"" + item.title + "\">" + item.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // artist
-                    if (item.artist.id != null) {
-                        html+= "<td class=\"filter filter_artist\" data-value=\"" + item.artist.id + "\">" + item.artist.name + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // album
-                    if (item.album.id != null) {
-                        html+= "<td class=\"filter filter_album\" data-value=\"" + item.album.id + "\">" + item.album.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    html+= "<td class=\"voteCount\">";
-                    if (item.votes > 0) {
-                        if (item.users.length == item.votes) {
-                            html+= "<div class=\"voteTooltip\"><ul>";
-                            for (var key in item.users) {
-                                var user = item.users[key];
-                                html+= "<li>" + user.name + "</li>"
-                            }
-                            html+= "</ul></div>";
-                        }
-                        html+= item.votes;
-                    }
-                    else {
-                        html+= gettext("Autoplay");
-                    }
-                    html+= "</td>";
-
-                    html+= "<td>" + item.created + "</td>";
-                    break;
-                case "favourites":
-                    html+= "<tr class=\"row_favourites\">";
-                    html+= "<td>";
-                    if (item.queued) {
-                        html+= "<img src=\"/static/img/queue_active.png\" class=\"queue_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Revoke vote") + "\" title=\"" + gettext("Revoke vote") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/queue.png\" class=\"queue_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Vote to play") + "\" title=\"" + gettext("Vote to play") + "\" />";
-                    }
-                    html+= "<img src=\"/static/img/favourite_active.png\" class=\"favourite_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Remove from favourites") + "\" title=\"" + gettext("Remove from favourites") + "\" />";
-                    html+= "</td>";
-
-                    // title
-                    if (item.title != null) {
-                        html+= "<td class=\"filter search_title\" data-value=\"" + item.title + "\">" + item.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // artist
-                    if (item.artist.id != null) {
-                        html+= "<td class=\"filter filter_artist\" data-value=\"" + item.artist.id + "\">" + item.artist.name + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // album
-                    if (item.album.id != null) {
-                        html+= "<td class=\"filter filter_album\" data-value=\"" + item.album.id + "\">" + item.album.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // genre
-                    if (item.genre.id != null) {
-                        html+= "<td class=\"filter filter_genre\" data-value=\"" + item.genre.id + "\">" + item.genre.name + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    html+= "<td>" + item.created + "</td>";
-                    break;
-                case "songs":
-                    html+= "<tr class=\"row_songs\">";
-                    html+= "<td>";
-                    if (item.queued) {
-                        html+= "<img src=\"/static/img/queue_active.png\" class=\"queue_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Revoke vote") + "\" title=\"" + gettext("Revoke vote") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/queue.png\" class=\"queue_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Vote to play") + "\" title=\"" + gettext("Vote to play") + "\" />";
-                    }
-                    if (item.favourite) {
-                        html+= "<img src=\"/static/img/favourite_active.png\" class=\"favourite_remove\" data-id=\"" + item.id + "\" alt=\"" + gettext("Remove from favourites") + "\" title=\"" + gettext("Remove from favourites") + "\" />";
-                    }
-                    else {
-                        html+= "<img src=\"/static/img/favourite.png\" class=\"favourite_add\" data-id=\"" + item.id + "\" alt=\"" + gettext("Add to favourites") + "\" title=\"" + gettext("Add to favourites") + "\" />";
-                    }
-                    html+= "</td>";
-                    // html+= "<td>" + ((item.title != null) ?  : "")  + "<span class=\"value invisible\">" + item.id + "</span></td>";
-
-                    // title
-                    if (item.title != null) {
-                        html+= "<td class=\"filter search_title\" data-value=\"" + item.title + "\">" + item.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // artist
-                    if (item.artist.id != null) {
-                        html+= "<td class=\"filter filter_artist\" data-value=\"" + item.artist.id + "\">" + item.artist.name + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // album
-                    if (item.album.id != null) {
-                        html+= "<td class=\"filter filter_album\" data-value=\"" + item.album.id + "\">" + item.album.title + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // genre
-                    if (item.genre.id != null) {
-                        html+= "<td class=\"filter filter_genre\" data-value=\"" + item.genre.id + "\">" + item.genre.name + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // year
-                    if (item.year != null) {
-                        html+= "<td class=\"filter filter_year\" data-value=\"" + item.year + "\">" + item.year + "</td>";
-                    }
-                    else {
-                        html+= "<td>&#160;</td>";
-                    }
-
-                    // length
-                    var minutes = parseInt(item.length / 60);
-                    var seconds = item.length % 60;
-                    if (seconds < 10) {
-                        seconds = "0" + seconds;
-                    }
-                    html+= "<td>" + minutes + ":" + seconds + "</td>";
-                    break;
-                case "artists":
-                    html+= "<tr class=\"row_artists\">";
-                    html+= "<td class=\"filter filter_artist\" data-value=\"" + item.id + "\">" + item.artist + "</td>";
-                    break;
-                case "albums":
-                    html+= "<tr class=\"row_albums\">";
-                    html+= "<td class=\"filter filter_album\" data-value=\"" + item.id + "\">" + item.album + "</td>";
-                    break;
-                case "genres":
-                    html+= "<tr class=\"row_genres\">";
-                    html+= "<td class=\"filter filter_genre\" data-value=\"" + item.id + "\">" + item.genre + "</td>";
-                    break;
-                case "years":
-                    html+= "<tr class=\"row_years\">";
-                    html+= "<td class=\"filter filter_year\" data-value=\"" + item.year + "\">" + item.year + "</td>";
-                    break;
-            }
-            html+= "</tr>";
-        });
-
-        return html;
-    }
-};
-
-$(document).ready(function() {
-    Music.init();
-});
+    window.Music = Music;
+    $(Music.init);
+}(jQuery));

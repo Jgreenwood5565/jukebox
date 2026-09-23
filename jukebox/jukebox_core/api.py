@@ -1,33 +1,134 @@
-# -*- coding: UTF-8 -*-
-from django.core.paginator import Paginator, InvalidPage
+"""Jukebox business logic shared by the REST API and the playback plugins.
+
+Playback plugins (jukebox_shout, jukebox_mpg123, ...) rely on ``songs``,
+``players`` and their camelCase methods, keep those names stable.
+"""
+
+import os
+import re
+import time
+from collections import Counter
+from signal import SIGABRT
+
+from django.contrib.sessions.models import Session
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.paginator import InvalidPage, Paginator
 from django.db import transaction
 from django.db.models import Count, Min, Q
-from django.contrib.sessions.models import Session
-from django.utils import formats
-import os, re, time
-from datetime import datetime
-from signal import SIGABRT
-from django.contrib.auth.models import User
-from models import Song, Artist, Album, Genre, Queue, Favourite, History, Player
+from django.utils import formats, timezone
+
+from .models import Album, Artist, Favourite, Genre, History, Player, Queue, Song
+
+SEARCH_KEYWORDS = ("title", "artist", "album", "genre", "year")
+
+SONG_RELATED = ("Artist", "Album", "Genre")
+
+
+def parse_search_string(keywords, term):
+    """Split a search string into ``keyword:value`` options and free text.
+
+    Values containing whitespace can be wrapped in brackets, e.g.
+    ``artist:(the beatles) yesterday``. Returns a dict with one entry per
+    keyword found plus ``term`` holding the remaining text.
+    """
+    values = {}
+    for keyword in keywords:
+        match = re.search(r"(?:^|\s)" + re.escape(keyword) + ":", term)
+        if match is None:
+            continue
+
+        start = match.end()
+        if term.startswith("(", start):
+            end = len(term)
+            depth = 0
+            for pos in range(start, len(term)):
+                if term[pos] == "(":
+                    depth += 1
+                elif term[pos] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        end = pos + 1
+                        break
+            value = term[start + 1 : end]
+            if value.endswith(")"):
+                value = value[:-1]
+        else:
+            end = term.find(" ", start)
+            if end == -1:
+                end = len(term)
+            value = term[start:end]
+
+        values[keyword] = value
+        term = term[: match.start()] + " " + term[end:]
+
+    values["term"] = re.sub(r"\s+", " ", term).strip()
+    return values
+
+
+def _bracket(value):
+    return f"({value})" if " " in value else value
+
+
+def _user_data(user):
+    return {"id": user.id, "name": user.get_full_name() or user.get_username()}
+
+
+def song_data(song):
+    """Serialize a song in the format shared by all list endpoints."""
+    return {
+        "id": song.id,
+        "title": song.Title,
+        "artist": {
+            "id": song.Artist.id if song.Artist else None,
+            "name": song.Artist.Name if song.Artist else None,
+        },
+        "album": {
+            "id": song.Album.id if song.Album else None,
+            "title": song.Album.Title if song.Album else None,
+        },
+        "year": song.Year,
+        "genre": {
+            "id": song.Genre.id if song.Genre else None,
+            "name": song.Genre.Name if song.Genre else None,
+        },
+        "queued": False,
+        "favourite": False,
+    }
+
+
+def _voted_song_data(item):
+    """Serialize a queue or history entry including its voters."""
+    users = list(item.User.all())
+    dataset = song_data(item.Song)
+    dataset.update(
+        {
+            "created": formats.date_format(timezone.localtime(item.Created), "DATETIME_FORMAT"),
+            "votes": len(users),
+            "users": [_user_data(user) for user in users],
+        }
+    )
+    return dataset
 
 
 class api_base:
     count = 30
-    user_id = None
-    search_term = None
-    search_title = None
-    search_artist_name = None
-    search_album_title = None
-    filter_year = None
-    filter_genre = None
-    filter_album_id = None
-    filter_artist_id = None
-    order_by_field = None
-    order_by_direction = None
-    order_by_fields = []
-    order_by_directions = ["asc", "desc"]
+    order_by_fields = {}
+    order_by_directions = ("asc", "desc")
     order_by_default = None
+    result_type = None
+
+    def __init__(self):
+        self.user_id = None
+        self.search_term = None
+        self.search_title = None
+        self.search_artist_name = None
+        self.search_album_title = None
+        self.filter_year = None
+        self.filter_genre = None
+        self.filter_album_id = None
+        self.filter_artist_id = None
+        self.order_by_field = None
+        self.order_by_direction = None
 
     def set_count(self, count):
         if count > 100:
@@ -39,16 +140,7 @@ class api_base:
         self.user_id = user_id
 
     def set_search_term(self, term):
-        options = self.parseSearchString(
-            (
-                "title",
-                "artist",
-                "album",
-                "genre",
-                "year",
-            ),
-            term
-        )
+        options = parse_search_string(SEARCH_KEYWORDS, term)
         for key, value in options.items():
             if key == "title":
                 self.set_search_title(value)
@@ -57,63 +149,20 @@ class api_base:
             elif key == "album":
                 self.set_search_album_title(value)
             elif key == "genre":
-                try:
-                    genre = Genre.objects.all().filter(Name__iexact=value)[0:1].get()
+                genre = Genre.objects.filter(Name__iexact=value).first()
+                if genre is not None:
                     self.set_filter_genre(genre.id)
-                except ObjectDoesNotExist:
-                    pass
             elif key == "year":
-                self.set_filter_year(value)
+                try:
+                    self.set_filter_year(int(value))
+                except ValueError:
+                    pass
 
-        self.search_term = options["term"]
+        self.search_term = options["term"] or None
 
-    def parseSearchString(self, keywords, term):
-        values = {}
-        for i in range(len(keywords)):
-            do_continue = False
-            keyword = keywords[i]
-            value = None
-            pos = term.find(keyword + ":")
-            if pos != -1:
-                value_start = pos + len(keyword) + 1
-                # no brackets, search for next whitespace
-                if term[value_start:value_start + 1] != "(":
-                    value_end = term.find(" ", value_start)
-                    if value_end == -1:
-                        value_end = len(term)
-                        do_continue = True
-                    value = term[value_start:value_end]
-                # search for next closing bracket but count opened ones
-                else:
-                    i = value_start + 1
-                    bracket_count = 1
-                    while i < len(term):
-                        char = term[i:i+1]
-                        if char == "(":
-                            bracket_count+= 1
-                        elif char == ")":
-                            bracket_count-= 1
-                            if not bracket_count:
-                                value = term[value_start:i+1]
-                                continue
-                        i+= 1
-
-                    if not value:
-                        value = term[value_start:len(term)]
-                        do_continue = True
-
-            if value is not None:
-                values[keyword] = value
-            if do_continue:
-                continue
-
-        for key, value in values.items():
-            term = term.replace(key + ":" + value, "").strip()
-            if value.startswith("("):
-                values[key] = value[1:len(value)-1]
-
-        values["term"] = re.sub("\s+", " ", term)
-        return values
+    # kept for backwards compatibility
+    def parseSearchString(self, keywords, term):  # noqa: N802
+        return parse_search_string(keywords, term)
 
     def set_search_title(self, term):
         self.search_title = term
@@ -137,8 +186,7 @@ class api_base:
         self.filter_artist_id = term
 
     def set_order_by(self, field, direction="asc"):
-        if (not field in self.order_by_fields or
-            not direction in self.order_by_directions):
+        if field not in self.order_by_fields or direction not in self.order_by_directions:
             return
 
         self.order_by_field = field
@@ -147,27 +195,16 @@ class api_base:
     def get_default_result(self, result_type, page):
         search = {}
         if self.search_title is not None:
-            value = self.search_title
-            if value.find(" ") != -1:
-                value = "(" + value + ")"
-            search["title"] = value
+            search["title"] = _bracket(self.search_title)
         if self.search_artist_name is not None:
-            value = self.search_artist_name
-            if value.find(" ") != -1:
-                value = "(" + value + ")"
-            search["artist"] = value
+            search["artist"] = _bracket(self.search_artist_name)
         if self.search_album_title is not None:
-            value = self.search_album_title
-            if value.find(" ") != -1:
-                value = "(" + value + ")"
-            search["album"] = value
+            search["album"] = _bracket(self.search_album_title)
         if self.filter_genre is not None:
-            genre = Genre.objects.all().filter(id=self.filter_genre)[0:1].get()
-            value = genre.Name
-            if value.find(" ") != -1:
-                value = "(" + value + ")"
-            search["genre"] = value
-            search["genre_id"] = genre.id
+            genre = Genre.objects.filter(id=self.filter_genre).first()
+            if genre is not None:
+                search["genre"] = _bracket(genre.Name)
+                search["genre_id"] = genre.id
         if self.filter_year is not None:
             search["year"] = str(self.filter_year)
         if self.search_term is not None:
@@ -182,59 +219,78 @@ class api_base:
             "search": search,
         }
 
-    def result_add_queue_and_favourite(self, song, dataset):
-        if not self.user_id is None:
-            try:
-                queue = Queue.objects.get(Song=song)
-                for user in queue.User.all():
-                    if user.id == self.user_id:
-                        dataset["queued"] = True
-                        break
-            except ObjectDoesNotExist:
-                pass
-            try:
-                user = User.objects.get(id=self.user_id)
-                Favourite.objects.get(Song=song, User=user)
-                dataset["favourite"] = True
-            except ObjectDoesNotExist:
-                pass
+    def mark_queued_and_favourites(self, datasets):
+        """Flag songs the current user voted for or marked as favourite."""
+        if self.user_id is None or not datasets:
+            return datasets
 
-        return dataset
+        song_ids = [dataset["id"] for dataset in datasets]
+        queued = set(
+            Queue.objects.filter(Song__in=song_ids, User__id=self.user_id).values_list(
+                "Song", flat=True
+            )
+        )
+        favourites = set(
+            Favourite.objects.filter(Song__in=song_ids, User__id=self.user_id).values_list(
+                "Song", flat=True
+            )
+        )
+        for dataset in datasets:
+            dataset["queued"] = dataset["id"] in queued
+            dataset["favourite"] = dataset["id"] in favourites
+        return datasets
+
+    def result_add_queue_and_favourite(self, song, dataset):
+        return self.mark_queued_and_favourites([dataset])[0]
 
     def source_set_order(self, object_list):
-        if not self.order_by_field is None:
-            field_name = self.order_by_fields.get(self.order_by_field)
+        if self.order_by_field is not None:
+            field_name = self.order_by_fields[self.order_by_field]
             if self.order_by_direction == "desc":
                 field_name = "-" + field_name
-
             return object_list.order_by(field_name)
-        elif not self.order_by_default is None:
-            order = []
-            for key, value in self.order_by_default.items():
-                order.append(value)
-
-            object_list = object_list.order_by(*order)
-
+        if self.order_by_default is not None:
+            return object_list.order_by(*self.order_by_default.values())
         return object_list
 
     def result_set_order(self, result):
         result["order"] = []
 
-        if not self.order_by_field is None:
-            result["order"].append({
-                "field": self.order_by_field,
-                "direction": self.order_by_direction,
-            })
-        elif not self.order_by_default is None:
+        if self.order_by_field is not None:
+            result["order"].append(
+                {
+                    "field": self.order_by_field,
+                    "direction": self.order_by_direction,
+                }
+            )
+        elif self.order_by_default is not None:
             for field, order in self.order_by_default.items():
-                result["order"].append({
-                    "field": field,
-                    "direction": "desc" if order.startswith("-") else "asc",
-                })
+                result["order"].append(
+                    {
+                        "field": field,
+                        "direction": "desc" if order.startswith("-") else "asc",
+                    }
+                )
 
         return result
 
+    def build_result(self, object_list, page, serialize, result_type=None):
+        """Paginate ``object_list`` and serialize the requested page."""
+        result = self.get_default_result(result_type or self.result_type, page)
+        result = self.result_set_order(result)
+
+        try:
+            page_obj = Paginator(object_list, self.count).page(page)
+        except InvalidPage:
+            return result
+
+        result["hasNextPage"] = page_obj.has_next()
+        result["itemList"] = [serialize(item) for item in page_obj.object_list]
+        return result
+
+
 class songs(api_base):
+    result_type = "songs"
     order_by_fields = {
         "title": "Title",
         "artist": "Artist__Name",
@@ -248,211 +304,143 @@ class songs(api_base):
     }
 
     def index(self, page=1):
-        object_list = Song.objects.all()
+        object_list = Song.objects.select_related(*SONG_RELATED)
 
         # searches
-        if not self.search_term is None:
+        if self.search_term is not None:
             object_list = object_list.filter(
-                Q(Title__contains=self.search_term)
-                |
-                Q(Artist__Name__contains=self.search_term)
-                |
-                Q(Album__Title__contains=self.search_term)
+                Q(Title__icontains=self.search_term)
+                | Q(Artist__Name__icontains=self.search_term)
+                | Q(Album__Title__icontains=self.search_term)
             )
-        if not self.search_title is None:
-            object_list = object_list.filter(
-                 Title__contains=self.search_title
-             )
-        if not self.search_artist_name is None:
-            object_list = object_list.filter(
-                 Artist__Name__contains=self.search_artist_name
-             )
-        if not self.search_album_title is None:
-            object_list = object_list.filter(
-                 Album__Title__contains=self.search_album_title
-             )
+        if self.search_title is not None:
+            object_list = object_list.filter(Title__icontains=self.search_title)
+        if self.search_artist_name is not None:
+            object_list = object_list.filter(Artist__Name__icontains=self.search_artist_name)
+        if self.search_album_title is not None:
+            object_list = object_list.filter(Album__Title__icontains=self.search_album_title)
 
         # filters
-        if not self.filter_year is None:
-            object_list = object_list.filter(
-                 Year__exact=self.filter_year
-             )
-        if not self.filter_genre is None:
-            object_list = object_list.filter(
-                 Genre__exact=self.filter_genre
-             )
-        if not self.filter_album_id is None:
-            object_list = object_list.filter(
-                 Album__exact=self.filter_album_id
-             )
-        if not self.filter_artist_id is None:
-            object_list = object_list.filter(
-                 Artist__exact=self.filter_artist_id
-             )
+        if self.filter_year is not None:
+            object_list = object_list.filter(Year=self.filter_year)
+        if self.filter_genre is not None:
+            object_list = object_list.filter(Genre=self.filter_genre)
+        if self.filter_album_id is not None:
+            object_list = object_list.filter(Album=self.filter_album_id)
+        if self.filter_artist_id is not None:
+            object_list = object_list.filter(Artist=self.filter_artist_id)
 
-        # order
         object_list = self.source_set_order(object_list)
 
-        # prepare result
-        result = self.get_default_result("songs", page)
+        def serialize(song):
+            dataset = song_data(song)
+            dataset["length"] = song.Length
+            return dataset
 
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            dataset = {
-                "id": item.id,
-                "title": None,
-                "artist": {
-                    "id": None,
-                    "name": None,
-                },
-                "album": {
-                    "id": None,
-                    "title": None,
-                },
-                "year": None,
-                "genre": {
-                    "id": None,
-                    "name": None,
-                },
-                "length": None,
-                "queued": False,
-                "favourite": False,
-            }
-            if not item.Title is None:
-                dataset["title"] = item.Title
-            if not item.Artist is None:
-                dataset["artist"]["id"] = item.Artist.id
-                dataset["artist"]["name"] = item.Artist.Name
-            if not item.Album is None:
-                dataset["album"]["id"] = item.Album.id
-                dataset["album"]["title"] = item.Album.Title
-            if not item.Year is None:
-                dataset["year"] = item.Year
-            if not item.Genre is None:
-                dataset["genre"]["id"] = item.Genre.id
-                dataset["genre"]["name"] = item.Genre.Name
-            if not item.Length is None:
-                dataset["length"] = item.Length
-
-            dataset = self.result_add_queue_and_favourite(item, dataset)
-            result["itemList"].append(dataset)
-
+        result = self.build_result(object_list, page, serialize)
+        self.mark_queued_and_favourites(result["itemList"])
         return result
 
-    def getNextSong(self):
-        # commit transaction to force fresh queryset result
-        try:
-            transaction.enter_transaction_management()
-            transaction.commit()
-        except BaseException:
-            pass
+    def getNextSong(self):  # noqa: N802
+        """Pop the next song to play and record it in the history.
 
-        try:
-            data = Queue.objects.all()
-            data = data.annotate(VoteCount=Count("User"))
-            data = data.annotate(MinCreated=Min("Created"))
-            data = data.order_by("-VoteCount", "MinCreated")[0:1].get()
-            self.addToHistory(data.Song, data.User)
-            song_instance = data.Song
-            data.delete()
-        except ObjectDoesNotExist:
-            try:
-                song_instance = self.getRandomSongByPreferences()
-                self.addToHistory(song_instance, None)
-            except ObjectDoesNotExist:
-                song_instance = Song.objects.order_by('?')[0:1].get()
-                self.addToHistory(song_instance, None)
+        Takes the most voted song from the queue, falling back to a song the
+        currently active listeners are likely to enjoy, then to a random one.
+        Songs whose file vanished are removed from the library and skipped.
+        Raises ``Song.DoesNotExist`` if the library is empty.
+        """
+        while True:
+            with transaction.atomic():
+                queue_item = (
+                    Queue.objects.select_related("Song__Artist")
+                    .annotate(VoteCount=Count("User"), MinCreated=Min("Created"))
+                    .order_by("-VoteCount", "MinCreated")
+                    .first()
+                )
+                if queue_item is not None:
+                    song_instance = queue_item.Song
+                else:
+                    try:
+                        song_instance = self.getRandomSongByPreferences()
+                    except ObjectDoesNotExist:
+                        song_instance = self.getRandomSong()
 
-        # remove missing files
-        if not os.path.exists(song_instance.Filename.encode('utf8')):
-            Song.objects.all().filter(id=song_instance.id).delete()
-            return self.getNextSong()
+                if not os.path.exists(song_instance.Filename):
+                    # also removes its queue entry
+                    song_instance.delete()
+                    continue
 
+                if queue_item is not None:
+                    self.addToHistory(song_instance, queue_item.User)
+                    queue_item.delete()
+                else:
+                    self.addToHistory(song_instance, None)
+
+            return song_instance
+
+    def getRandomSong(self):  # noqa: N802
+        song_instance = Song.objects.select_related("Artist").order_by("?").first()
+        if song_instance is None:
+            raise Song.DoesNotExist("The music library is empty")
         return song_instance
 
-    def getRandomSongByPreferences(self):
-        artists = {}
+    def getRandomSongByPreferences(self):  # noqa: N802
+        # users with an active web session
+        user_ids = set()
+        for session in Session.objects.filter(expire_date__gt=timezone.now()):
+            user_id = session.get_decoded().get("_auth_user_id")
+            if user_id is not None:
+                user_ids.add(user_id)
 
-        # get logged in users
-        sessions = Session.objects.exclude(
-            expire_date__lt=datetime.today()
-        )
-        for session in sessions.all():
-            data = session.get_decoded()
-            if not "_auth_user_id" in data:
-                continue
-            user_id = data["_auth_user_id"]
-
-            # get newest favourites
-            favourites = Favourite.objects.filter(User__id=user_id)[0:30]
-            for favourite in favourites:
-                if not favourite.Song.Artist.id in artists:
-                    artists[favourite.Song.Artist.id] = 0
-                artists[favourite.Song.Artist.id]+= 1
-
-            # get last voted songs
-            votes = History.objects.filter(User__id=user_id)[0:30]
-            for vote in votes:
-                if not vote.Song.Artist.id in artists:
-                    artists[vote.Song.Artist.id] = 0
-                artists[vote.Song.Artist.id]+= 1
+        # artists of their newest favourites and recently voted songs
+        artists = Counter()
+        for user_id in user_ids:
+            artists.update(
+                Favourite.objects.filter(User__id=user_id).values_list("Song__Artist", flat=True)[
+                    :30
+                ]
+            )
+            artists.update(
+                History.objects.filter(User__id=user_id).values_list("Song__Artist", flat=True)[:30]
+            )
 
         # nothing played and no favourites
-        if not len(artists):
-            raise ObjectDoesNotExist
+        if not artists:
+            raise Song.DoesNotExist("No listener preferences available")
 
-        # calculate top artists
-        from operator import itemgetter
-        sorted_artists = sorted(
-            artists.iteritems(),
-            key=itemgetter(1),
-            reverse=True
-        )[0:30]
-        artists = []
-        for key in range(len(sorted_artists)):
-            artists.append(sorted_artists[key][0])
-
-        # get the 50 last played songs
-        history = History.objects.all()[0:50]
-        last_played = []
-        for item in history:
-            last_played.append(item.Song.id)
+        top_artists = [artist_id for artist_id, _ in artists.most_common(30)]
+        last_played = list(History.objects.values_list("Song", flat=True)[:50])
 
         # find a song not played recently
-        song_instance = Song.objects.exclude(
-            id__in=last_played
-        ).filter(
-            Artist__id__in=artists
-        ).order_by('?')[0:1].get()
+        song_instance = (
+            Song.objects.select_related("Artist")
+            .exclude(id__in=last_played)
+            .filter(Artist__in=top_artists)
+            .order_by("?")
+            .first()
+        )
+        if song_instance is None:
+            raise Song.DoesNotExist("No matching song found")
         return song_instance
 
-    def addToHistory(self, song_instance, user_list):
-        history_instance = History(
-            Song=song_instance
-        )
-        history_instance.save()
+    def addToHistory(self, song_instance, user_list):  # noqa: N802
+        history_instance = History.objects.create(Song=song_instance)
+        if user_list is not None:
+            users = user_list.all() if hasattr(user_list, "all") else user_list
+            history_instance.User.add(*users)
+        return history_instance
 
-        if user_list is not None and user_list.count() > 0:
-            for user_instance in user_list.all():
-                history_instance.User.add(user_instance)
-
-    def skipCurrentSong(self):
-        players = Player.objects.all()
-        for player in players:
+    def skipCurrentSong(self):  # noqa: N802
+        for player in Player.objects.all():
             try:
                 os.kill(player.Pid, SIGABRT)
             except OSError:
+                # player process is gone
                 player.delete()
 
+
 class history(api_base):
+    result_type = "history"
     order_by_fields = {
         "title": "Song__Title",
         "artist": "Song__Artist__Name",
@@ -465,145 +453,43 @@ class history(api_base):
         "created": "-Created",
     }
 
+    def get_queryset(self):
+        return History.objects.all()
+
     def index(self, page=1):
-        object_list = History.objects.all()
+        object_list = (
+            self.get_queryset()
+            .select_related(*(f"Song__{name}" for name in SONG_RELATED))
+            .prefetch_related("User")
+        )
         object_list = self.source_set_order(object_list)
-        result = self.build_result(object_list, page)
-        result = self.result_set_order(result)
+        result = self.build_result(object_list, page, _voted_song_data)
+        self.mark_queued_and_favourites(result["itemList"])
         return result
 
-    def build_result(self, object_list, page):
-        # prepare result
-        result = self.get_default_result("history", page)
+    def getCurrent(self):  # noqa: N802
+        item = (
+            History.objects.select_related(*(f"Song__{name}" for name in SONG_RELATED))
+            .prefetch_related("User")
+            .first()
+        )
+        if item is None:
+            raise History.DoesNotExist("Nothing played yet")
 
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            dataset = {
-                "id": item.Song.id,
-                "title": None,
-                "artist": {
-                    "id": None,
-                    "name": None,
-                },
-                "album": {
-                    "id": None,
-                    "title": None,
-                },
-                "year": None,
-                "genre": {
-                    "id": None,
-                    "name": None,
-                },
-                "queued": False,
-                "favourite": False,
-                "created": formats.date_format(
-                    item.Created, "DATETIME_FORMAT"
-                ),
-                "votes": item.User.count(),
-                "users": [],
-            }
-            if not item.Song.Title is None:
-                dataset["title"] = item.Song.Title
-            if not item.Song.Artist is None:
-                dataset["artist"]["id"] = item.Song.Artist.id
-                dataset["artist"]["name"] = item.Song.Artist.Name
-            if not item.Song.Album is None:
-                dataset["album"]["id"] = item.Song.Album.id
-                dataset["album"]["title"] = item.Song.Album.Title
-            if not item.Song.Year is None:
-                dataset["year"] = item.Song.Year
-            if not item.Song.Genre is None:
-                dataset["genre"]["id"] = item.Song.Genre.id
-                dataset["genre"]["name"] = item.Song.Genre.Name
-
-            if not item.User.count() == 0:
-                for user in item.User.all():
-                    dataset["users"].append({
-                        "id": user.id,
-                        "name": user.get_full_name()
-                    })
-
-            dataset = self.result_add_queue_and_favourite(item.Song, dataset)
-            result["itemList"].append(dataset)
-
-        return result
-
-    def getCurrent(self):
-        item = History.objects.all()[0:1].get()
-        createdTimestamp = time.mktime(item.Created.timetuple())
-        dataset = {
-            "id": item.Song.id,
-            "title": None,
-            "artist": {
-                "id": None,
-                "name": None,
-            },
-            "album": {
-                "id": None,
-                "title": None,
-            },
-            "year": None,
-            "genre": {
-                "id": None,
-                "name": None,
-            },
-            "queued": False,
-            "favourite": False,
-            "created": formats.date_format(
-                item.Created, "DATETIME_FORMAT"
-            ),
-            "votes": item.User.count(),
-            "users": [],
-            "remaining": createdTimestamp + item.Song.Length - int(time.time())
-        }
-        if not item.Song.Title is None:
-            dataset["title"] = item.Song.Title
-        if not item.Song.Artist is None:
-            dataset["artist"]["id"] = item.Song.Artist.id
-            dataset["artist"]["name"] = item.Song.Artist.Name
-        if not item.Song.Album is None:
-            dataset["album"]["id"] = item.Song.Album.id
-            dataset["album"]["title"] = item.Song.Album.Title
-        if not item.Song.Year is None:
-            dataset["year"] = item.Song.Year
-        if not item.Song.Genre is None:
-            dataset["genre"]["id"] = item.Song.Genre.id
-            dataset["genre"]["name"] = item.Song.Genre.Name
-
+        dataset = _voted_song_data(item)
+        dataset["remaining"] = int(item.Created.timestamp() + item.Song.Length - time.time())
         return dataset
 
+
 class history_my(history):
-    order_by_fields = {
-        "title": "Song__Title",
-        "artist": "Song__Artist__Name",
-        "album": "Song__Album__Title",
-        "year": "Song__Year",
-        "genre": "Song__Genre__Name",
-        "created": "Created",
-    }
-    order_by_default = {
-        "created": "-Created",
-    }
+    result_type = "history/my"
 
-    def index(self, page=1):
-        object_list = History.objects.all().filter(User__id=self.user_id)
-        object_list = self.source_set_order(object_list)
-        result = self.build_result(object_list, page)
-
-        result = self.result_set_order(result)
-        result["type"] = "history/my"
-        return result
+    def get_queryset(self):
+        return History.objects.filter(User__id=self.user_id)
 
 
 class queue(api_base):
+    result_type = "queue"
     order_by_fields = {
         "title": "Song__Title",
         "artist": "Song__Artist__Name",
@@ -618,110 +504,47 @@ class queue(api_base):
         "created": "MinCreated",
     }
 
+    def get_queryset(self):
+        return (
+            Queue.objects.select_related(*(f"Song__{name}" for name in SONG_RELATED))
+            .prefetch_related("User")
+            .annotate(VoteCount=Count("User"), MinCreated=Min("Created"))
+        )
+
     def index(self, page=1):
-        object_list = Queue.objects.all()
-        object_list = object_list.annotate(VoteCount=Count("User"))
-        object_list = object_list.annotate(MinCreated=Min("Created"))
-        object_list = self.source_set_order(object_list)
-
-        # prepare result
-        result = self.get_default_result("queue", page)
-
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            result["itemList"].append(self.get(item.Song.id))
-
+        object_list = self.source_set_order(self.get_queryset())
+        result = self.build_result(object_list, page, _voted_song_data)
+        self.mark_queued_and_favourites(result["itemList"])
         return result
 
     def get(self, song_id):
-        song = Song.objects.get(id=song_id)
-        item = Queue.objects.get(Song=song)
-
-        result = {
-            "id": item.Song.id,
-            "title": None,
-            "artist": {
-                "id": None,
-                "name": None,
-            },
-            "album": {
-                "id": None,
-                "title": None,
-            },
-            "year": None,
-            "genre": {
-                "id": None,
-                "name": None,
-            },
-            "queued": False,
-            "favourite": False,
-            "created": formats.date_format(item.Created, "DATETIME_FORMAT"),
-            "votes": item.User.count(),
-            "users": [],
-        }
-
-        if not item.Song.Title is None:
-            result["title"] = item.Song.Title
-        if not item.Song.Artist is None:
-            result["artist"]["id"] = item.Song.Artist.id
-            result["artist"]["name"] = item.Song.Artist.Name
-        if not item.Song.Album is None:
-            result["album"]["id"] = item.Song.Album.id
-            result["album"]["title"] = item.Song.Album.Title
-        if not item.Song.Year is None:
-            result["year"] = item.Song.Year
-        if not item.Song.Genre is None:
-            result["genre"]["id"] = item.Song.Genre.id
-            result["genre"]["name"] = item.Song.Genre.Name
-
-        if not item.User.count() == 0:
-            for user in item.User.all():
-                result["users"].append({"id": user.id, "name": user.get_full_name()})
-
-        result = self.result_add_queue_and_favourite(item.Song, result)
-
-        return result
+        item = self.get_queryset().get(Song__id=song_id)
+        return self.mark_queued_and_favourites([_voted_song_data(item)])[0]
 
     def add(self, song_id):
+        """Vote for a song, returns the number of votes it has now."""
         song = Song.objects.get(id=song_id)
-        user = User.objects.get(id=self.user_id)
-
-        try:
-            queue = Queue.objects.get(Song=song)
-        except ObjectDoesNotExist:
-            queue = Queue(
-                Song=song
-            )
-            queue.save()
-        queue.User.add(user)
-
-        return song_id
+        with transaction.atomic():
+            queue_item, _ = Queue.objects.get_or_create(Song=song)
+            queue_item.User.add(self.user_id)
+            return queue_item.User.count()
 
     def remove(self, song_id):
-        song = Song.objects.get(id=song_id)
-        user = User.objects.get(id=self.user_id)
-
-        queue = Queue.objects.get(Song=song)
-        queue.User.remove(user)
-        vote_count = queue.User.count()
-        if not queue.User.count():
-            queue.delete()
+        with transaction.atomic():
+            queue_item = Queue.objects.select_for_update().get(Song__id=song_id)
+            queue_item.User.remove(self.user_id)
+            vote_count = queue_item.User.count()
+            if not vote_count:
+                queue_item.delete()
 
         return {
-            "id": song_id,
+            "id": int(song_id),
             "count": vote_count,
         }
 
 
 class favourites(api_base):
+    result_type = "favourites"
     order_by_fields = {
         "title": "Song__Title",
         "artist": "Song__Artist__Name",
@@ -734,97 +557,44 @@ class favourites(api_base):
         "created": "-Created",
     }
 
+    def get_queryset(self):
+        return Favourite.objects.filter(User__id=self.user_id).select_related(
+            *(f"Song__{name}" for name in SONG_RELATED)
+        )
+
+    def serialize(self, item):
+        dataset = song_data(item.Song)
+        dataset["created"] = formats.date_format(
+            timezone.localtime(item.Created), "DATETIME_FORMAT"
+        )
+        return dataset
+
     def index(self, page=1):
-        object_list = Favourite.objects.all().filter(User__id=self.user_id)
-        object_list = self.source_set_order(object_list)
-
-        # prepare result
-        result = self.get_default_result("favourites", page)
-
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            result["itemList"].append(self.get(item.Song.id))
-
+        object_list = self.source_set_order(self.get_queryset())
+        result = self.build_result(object_list, page, self.serialize)
+        self.mark_queued_and_favourites(result["itemList"])
         return result
 
     def get(self, song_id):
-        song = Song.objects.get(id=song_id)
-        item = Favourite.objects.get(Song=song,User__id=self.user_id)
-
-        result = {
-            "id": item.Song.id,
-            "title": None,
-            "artist": {
-                "id": None,
-                "name": None,
-            },
-            "album": {
-                "id": None,
-                "title": None,
-            },
-            "year": None,
-            "genre": {
-                "id": None,
-                "name": None,
-            },
-            "queued": False,
-            "favourite": False,
-            "created": formats.date_format(item.Created, "DATETIME_FORMAT"),
-        }
-
-        if not item.Song.Title is None:
-            result["title"] = item.Song.Title
-        if not item.Song.Artist is None:
-            result["artist"]["id"] = item.Song.Artist.id
-            result["artist"]["name"] = item.Song.Artist.Name
-        if not item.Song.Album is None:
-            result["album"]["id"] = item.Song.Album.id
-            result["album"]["title"] = item.Song.Album.Title
-        if not item.Song.Year is None:
-            result["year"] = item.Song.Year
-        if not item.Song.Genre is None:
-            result["genre"]["id"] = item.Song.Genre.id
-            result["genre"]["name"] = item.Song.Genre.Name
-
-        result = self.result_add_queue_and_favourite(item.Song, result)
-
-        return result
+        item = self.get_queryset().get(Song__id=song_id)
+        return self.mark_queued_and_favourites([self.serialize(item)])[0]
 
     def add(self, song_id):
+        """Mark a song as favourite, returns True if it was newly added."""
         song = Song.objects.get(id=song_id)
-        user = User.objects.get(id=self.user_id)
-
-        favourite = Favourite(
-            Song=song,
-            User=user
-        )
-        favourite.save()
-
-        return song_id
+        _, created = Favourite.objects.get_or_create(Song=song, User_id=self.user_id)
+        return created
 
     def remove(self, song_id):
-        song = Song.objects.get(id=song_id)
-        user = User.objects.get(id=self.user_id)
-
-        Favourite.objects.get(
-            Song=song,
-            User=user
-        ).delete()
+        self.get_queryset().get(Song__id=song_id).delete()
 
         return {
-            "id": song_id,
+            "id": int(song_id),
         }
 
 
 class artists(api_base):
+    result_type = "artists"
     order_by_fields = {
         "artist": "Name",
     }
@@ -833,33 +603,14 @@ class artists(api_base):
     }
 
     def index(self, page=1):
-        # prepare result
-        result = self.get_default_result("artists", page)
-
-        object_list = Artist.objects.all()
-        object_list = self.source_set_order(object_list)
-
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            dataset = {
-                "id": item.id,
-                "artist": item.Name,
-            }
-
-            result["itemList"].append(dataset)
-
-        return result
+        object_list = self.source_set_order(Artist.objects.all())
+        return self.build_result(
+            object_list, page, lambda item: {"id": item.id, "artist": item.Name}
+        )
 
 
 class albums(api_base):
+    result_type = "albums"
     order_by_fields = {
         "album": "Title",
     }
@@ -868,33 +619,14 @@ class albums(api_base):
     }
 
     def index(self, page=1):
-        # prepare result
-        result = self.get_default_result("albums", page)
-
-        object_list = Album.objects.all()
-        object_list = self.source_set_order(object_list)
-
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            dataset = {
-                "id": item.id,
-                "album": item.Title,
-            }
-
-            result["itemList"].append(dataset)
-
-        return result
+        object_list = self.source_set_order(Album.objects.all())
+        return self.build_result(
+            object_list, page, lambda item: {"id": item.id, "album": item.Title}
+        )
 
 
 class genres(api_base):
+    result_type = "genres"
     order_by_fields = {
         "genre": "Name",
     }
@@ -903,78 +635,33 @@ class genres(api_base):
     }
 
     def index(self, page=1):
-        # prepare result
-        result = self.get_default_result("genres", page)
-
-        object_list = Genre.objects.all()
-        object_list = self.source_set_order(object_list)
-
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            dataset = {
-                "id": item.id,
-                "genre": item.Name,
-            }
-
-            result["itemList"].append(dataset)
-
-        return result
+        object_list = self.source_set_order(Genre.objects.all())
+        return self.build_result(
+            object_list, page, lambda item: {"id": item.id, "genre": item.Name}
+        )
 
 
 class years(api_base):
+    result_type = "years"
     order_by_fields = {
         "year": "Year",
     }
     order_by_default = {
-        "year": "Year"
+        "year": "Year",
     }
 
     def index(self, page=1):
-        # prepare result
-        result = self.get_default_result("years", page)
-
-        object_list = Song.objects.values("Year").distinct()
-        object_list = object_list.exclude(Year=None).exclude(Year=0)
+        object_list = Song.objects.values("Year").exclude(Year=None).exclude(Year=0).distinct()
         object_list = self.source_set_order(object_list)
-
-        # get data
-        paginator = Paginator(object_list, self.count)
-        try:
-            page_obj = paginator.page(page)
-        except InvalidPage:
-            return result
-
-        result = self.result_set_order(result)
-        result["hasNextPage"] = page_obj.has_next()
-        for item in page_obj.object_list:
-            dataset = {
-                "year": item["Year"],
-            }
-
-            result["itemList"].append(dataset)
-
-        return result
+        return self.build_result(object_list, page, lambda item: {"year": item["Year"]})
 
 
 class players(api_base):
     def add(self, pid):
-        player = Player(
-            Pid=pid
-        )
-        player.save()
-
-        return player.id
+        return Player.objects.create(Pid=pid).id
 
     def remove(self, pid):
-        Player.objects.get(Pid=pid).delete()
+        Player.objects.filter(Pid=pid).delete()
 
         return {
             "pid": pid,

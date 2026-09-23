@@ -1,18 +1,19 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+{% load i18n static %}<!DOCTYPE html>
+{% get_current_language as LANGUAGE_CODE %}
+<html lang="{{ LANGUAGE_CODE }}">
     <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <title>{% trans "Democratic Jukebox - your democratic music player" %}</title>
         <meta name="description" content="{% trans 'Democratic Jukebox - your democratic music player' %}">
-        <meta charset="UTF-8"/>
-        <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon"/>
-        <link type="text/css" rel="stylesheet" href="/static/css/music.css" />
+        <link rel="shortcut icon" href="{% static 'img/favicon.ico' %}" type="image/x-icon"/>
+        <link type="text/css" rel="stylesheet" href="{% static 'css/music.css' %}" />
     </head>
-    <body>
+    <body data-static-url="{% static '' %}">
         <div id="header">
             <div id="logo">
-                <a href="/">
-                    <img src="/static/img/jukebox.png" alt="{% trans 'Jukebox logo' %}" width="156" height="40" />
+                <a href="{% url 'jukebox_web_index' %}">
+                    <img src="{% static 'img/jukebox.png' %}" alt="{% trans 'Jukebox logo' %}" width="156" height="40" />
                 </a>
             </div>
             <div id="profile" title="{% trans 'Account options' %}">
@@ -131,7 +132,7 @@
                     <select name="search_year" id="search_year">
                         <option value="">{% trans 'All years' %}</option>
                         {% for year in years %}
-                            <option value="{{ year.Year }}">{{ year.Year }}</option>
+                            <option value="{{ year }}">{{ year }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -143,27 +144,30 @@
             </form>
         </div>
         <div id="accountoptions">
-            <h1>{%  trans 'Switch language' %}</h1>
+            <h1>{% trans 'Switch language' %}</h1>
             <ul>
                 <li>
-                    <a href="/language/set/en">{% trans 'English' %}</a>
+                    <a href="{% url 'jukebox_web_language' 'en' %}">{% trans 'English' %}</a>
                 </li>
                 <li>
-                    <a href="/language/set/de">{% trans 'German' %}</a>
+                    <a href="{% url 'jukebox_web_language' 'de' %}">{% trans 'German' %}</a>
                 </li>
             </ul>
             <h1>{% trans 'Misc' %}</h1>
             <ul>
                 <li>
-                    <a href="/logout">{% trans 'Logout' %}</a>
+                    <form action="{% url 'jukebox_web_logout' %}" method="post">
+                        {% csrf_token %}
+                        <button type="submit" class="linkbutton">{% trans 'Logout' %}</button>
+                    </form>
                 </li>
             </ul>
         </div>
         <div id="csrf_token">
             {% csrf_token %}
         </div>
-        <script type="text/javascript" src="/static/js/jquery-1.7.min.js"></script>
-        <script type="text/javascript" src="{% url django.views.i18n.javascript_catalog %}"></script>
-        <script type="text/javascript" src="/static/js/music.js"></script>
+        <script src="{% static 'js/jquery-3.7.1.min.js' %}"></script>
+        <script src="{% url 'javascript-catalog' %}"></script>
+        <script src="{% static 'js/music.js' %}"></script>
     </body>
 </html>
