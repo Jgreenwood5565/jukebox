@@ -51,7 +51,7 @@ hr {
     display: block;
     margin: 10px 0;
     border: 0;
-    border-top: 1px dotted #999999;
+    border-top: 1px dotted var(--muted);
 }
 
 blockquote {
@@ -60,8 +60,51 @@ blockquote {
     border-left: 1px solid #3a8bcc;
 }
 
+/*
+------------------------------------------------------------------------------------
+ themes, dark is the default (see data-theme on the html element)
+------------------------------------------------------------------------------------
+*/
+
+:root {
+    --bg: #FFFFFF;
+    --text: #444444;
+    --text-strong: #222222;
+    --surface: #F5F5F5;
+    --surface-border: #E5E5E5;
+    --popup-bg: #FFFFFF;
+    --popup-border: #CCCCCC;
+    --input-bg: #FFFFFF;
+    --input-border: #D9D9D9;
+    --input-border-top: #C0C0C0;
+    --accent: #ED9005;
+    --accent-light: #EFA73D;
+    --accent-dark: #964E06;
+    --on-accent: #444444;
+    --muted: #999999;
+    --error: #D00000;
+    color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+    --bg: #15171B;
+    --text: #D2D4D8;
+    --text-strong: #F0F1F3;
+    --surface: #1F2227;
+    --surface-border: #2D3139;
+    --popup-bg: #24282E;
+    --popup-border: #3A3F48;
+    --input-bg: #1A1C21;
+    --input-border: #3A3F48;
+    --input-border-top: #4A505B;
+    --on-accent: #15171B;
+    --muted: #777C86;
+    --error: #FF6B6B;
+    color-scheme: dark;
+}
+
 a, a:hover, a:visited {
-    color: #ED9005;
+    color: var(--accent);
     text-decoration: none;
 }
 
@@ -70,7 +113,8 @@ a, a:hover, a:visited {
 }
 
 body {
-    color: #444444;
+    color: var(--text);
+    background-color: var(--bg);
     font-size: 9pt;
     font-family: verdana, helvetica, sans-serif;
     line-height: 150%;
@@ -84,8 +128,8 @@ body {
 
 #header {
     height: 60px;
-    background-color: #F5F5F5;
-    border-bottom: 1px solid #E5E5E5;
+    background-color: var(--surface);
+    border-bottom: 1px solid var(--surface-border);
     position: fixed;
     top: 0;
     left: 0;
@@ -108,7 +152,7 @@ body {
 }
 
 #logo span.author span.grey {
-    color: #444444;
+    color: var(--text);
 }
 
 #search {
@@ -138,8 +182,8 @@ body {
     padding: 3px 22px 3px 8px;
     font-family: verdana, helvetica, sans-serif;
 
-    border: 1px solid #D9D9D9 !important;
-    border-top: 1px solid silver !important;
+    border: 1px solid var(--input-border) !important;
+    border-top: 1px solid var(--input-border-top) !important;
     border-radius: 1px;
     -webkit-border-radius: 1px;
     -moz-border-radius: 1px;
@@ -148,7 +192,8 @@ body {
     -moz-box-sizing: border-box;
     -webkit-box-sizing: border-box;
 
-    background-color: #FFFFFF;
+    color: var(--text);
+    background-color: var(--input-bg);
 }
 
 #searchoptions {
@@ -168,22 +213,16 @@ span.options:hover, #profile:hover span.options {
     background: url("../img/arrow_down_active.png") no-repeat center;
 }
 
-span.searchsubmit {
+span.searchsubmit, button.submit {
     display: block;
     height: 27px;
     width: 54px;
     padding: 0 8px;
 
-    background-color: #F07F09;
-    background: -webkit-linear-gradient(top,#EFA73D,#ED9005);
-    background: -moz-linear-gradient(top,#EFA73D,#ED9005);
-    background: -ms-linear-gradient(top,#EFA73D,#ED9005);
-    background: -o-linear-gradient(top,#EFA73D,#ED9005);
-    background: linear-gradient(top,#EFA73D,#ED9005);
+    background-color: var(--accent);
+    background: linear-gradient(to bottom, var(--accent-light), var(--accent));
 
-    border: 1px solid #964E06;
-    -webkit-border-radius: 2px;
-    -moz-border-radius: 2px;
+    border: 1px solid var(--accent-dark);
     border-radius: 2px;
     outline: 0;
 
@@ -202,16 +241,10 @@ span.searchreset {
     padding: 0 8px;
     float: right;
 
-    background-color: #AAAAAA;
-    background: -webkit-linear-gradient(top,#AAAAAA,#888888);
-    background: -moz-linear-gradient(top,#AAAAAA,#888888);
-    background: -ms-linear-gradient(top,#AAAAAA,#888888);
-    background: -o-linear-gradient(top,#AAAAAA,#888888);
-    background: linear-gradient(top,#AAAAAA,#888888);
+    background-color: #888888;
+    background: linear-gradient(to bottom, #AAAAAA, #888888);
 
     border: 1px solid #444444;
-    -webkit-border-radius: 2px;
-    -moz-border-radius: 2px;
     border-radius: 2px;
     outline: 0;
 
@@ -235,10 +268,10 @@ span.searchreset {
     position: absolute;
     top: 44px;
     left: 245px;
-    background-color: #FFFFFF;
+    background-color: var(--popup-bg);
 
     width: 318px;
-    border: 1px solid #CCC;
+    border: 1px solid var(--popup-border);
     padding: 5px;
 
     z-index: 400;
@@ -255,8 +288,8 @@ span.searchreset {
     padding: 3px;
     font-family: verdana, helvetica, sans-serif;
 
-    border: 1px solid #D9D9D9 !important;
-    border-top: 1px solid silver !important;
+    border: 1px solid var(--input-border) !important;
+    border-top: 1px solid var(--input-border-top) !important;
     border-radius: 1px;
     -webkit-border-radius: 1px;
     -moz-border-radius: 1px;
@@ -264,6 +297,9 @@ span.searchreset {
     box-sizing: border-box;
     -moz-box-sizing: border-box;
     -webkit-box-sizing: border-box;
+
+    color: var(--text);
+    background-color: var(--input-bg);
 }
 
 #searchdetails div.option {
@@ -300,10 +336,10 @@ span.searchreset {
     position: absolute;
     top: 44px;
     right: 20px;
-    background-color: #FFFFFF;
+    background-color: var(--popup-bg);
 
     width: 200px;
-    border: 1px solid #CCC;
+    border: 1px solid var(--popup-border);
     padding: 15px 5px;
 
     z-index: 400;
@@ -320,7 +356,7 @@ span.searchreset {
 
 #accountoptions ul li {
     padding: 0 0 5px 20px;
-    border-left:  3px solid #FFFFFF;
+    border-left:  3px solid transparent;
 }
 
 #accountoptions button.linkbutton {
@@ -328,13 +364,13 @@ span.searchreset {
     border: 0;
     background: none;
     font: inherit;
-    color: #ED9005;
+    color: var(--accent);
     cursor: pointer;
 }
 
 #accountoptions ul li.active {
     font-weight: bold;
-    border-left:  3px solid #ED9005;
+    border-left:  3px solid var(--accent);
 }
 
 /*
@@ -354,6 +390,7 @@ span.searchreset {
     top: 76px;
     left: 0;
     z-index: 350;
+    background-color: var(--bg);
 }
 
 #sidebar h1 {
@@ -367,7 +404,7 @@ span.searchreset {
 
 #sidebar ul li {
     padding: 0 0 5px 35px;
-    border-left:  3px solid #FFFFFF;
+    border-left:  3px solid transparent;
 }
 
 #sidebar ul li.second {
@@ -376,7 +413,7 @@ span.searchreset {
 
 #sidebar ul li.active {
     font-weight: bold;
-    border-left:  3px solid #ED9005;
+    border-left:  3px solid var(--accent);
 }
 
 #main_spacer {
@@ -386,7 +423,7 @@ span.searchreset {
     right: 30px;
     height: 15px;
     width: 100%;
-    background-color: #FFFFFF;
+    background-color: var(--bg);
     z-index: 350;
 }
 
@@ -407,7 +444,7 @@ span.searchreset {
 }
 
 #main p.login_error {
-    color: #FF0000;
+    color: var(--error);
 }
 
 #main div.noContent {
@@ -427,7 +464,7 @@ span.searchreset {
 }
 
 #main table.list th[data-sort]:hover {
-    color: #ED9005;
+    color: var(--accent);
 }
 
 #main table.list th.sort_asc:after {
@@ -490,8 +527,8 @@ span.searchreset {
 #main table.list td {
     height: 34px;
     font-size: 9pt;
-    background-color: #F5F5F5;
-    border-bottom: 1px solid #E5E5E5;
+    background-color: var(--surface);
+    border-bottom: 1px solid var(--surface-border);
     padding:  5px 0 5px 15px;
     overflow: hidden;
 }
@@ -499,8 +536,8 @@ span.searchreset {
 #main table.list td div.voteTooltip {
     display: none;
     position: fixed;
-    border: 1px solid #CCC;
-    background-color: #FFFFFF;
+    border: 1px solid var(--popup-border);
+    background-color: var(--popup-bg);
     padding: 5px;
     z-index: 400;
 }
@@ -510,10 +547,56 @@ span.searchreset {
 }
 
 #main table.list td.filter:hover {
-    background-color: #EFA73D;
+    color: var(--on-accent);
+    background-color: var(--accent-light);
 }
 
 #main table.list td img {
     margin-right: 10px;
     cursor: pointer;
+}
+
+/*
+------------------------------------------------------------------------------------
+ login
+------------------------------------------------------------------------------------
+*/
+
+#main form.localLogin {
+    width: 280px;
+    margin-top: 30px;
+}
+
+#main form.localLogin label {
+    display: block;
+    margin-bottom: 3px;
+}
+
+#main form.localLogin input[type=text], #main form.localLogin input[type=password] {
+    width: 100%;
+    height: 30px;
+    margin-bottom: 12px;
+    padding: 3px 8px;
+    box-sizing: border-box;
+    font-family: verdana, helvetica, sans-serif;
+    color: var(--text);
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-top: 1px solid var(--input-border-top);
+    border-radius: 1px;
+}
+
+#main button.submit {
+    width: auto;
+    padding: 0 16px;
+    font-family: verdana, helvetica, sans-serif;
+}
+
+#main p.loginSeparator {
+    margin-top: 30px;
+    color: var(--muted);
+}
+
+#main div.login img {
+    border-radius: 4px;
 }

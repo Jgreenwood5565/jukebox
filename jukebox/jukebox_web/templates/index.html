@@ -1,6 +1,6 @@
 {% load i18n static %}<!DOCTYPE html>
 {% get_current_language as LANGUAGE_CODE %}
-<html lang="{{ LANGUAGE_CODE }}">
+<html lang="{{ LANGUAGE_CODE }}" data-theme="{{ theme }}">
     <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -151,6 +151,15 @@
                 </li>
                 <li>
                     <a href="{% url 'jukebox_web_language' 'de' %}">{% trans 'German' %}</a>
+                </li>
+            </ul>
+            <h1>{% trans 'Theme' %}</h1>
+            <ul>
+                <li{% if theme == 'dark' %} class="active"{% endif %}>
+                    <a href="{% url 'jukebox_web_theme' 'dark' %}">{% trans 'Dark' %}</a>
+                </li>
+                <li{% if theme == 'light' %} class="active"{% endif %}>
+                    <a href="{% url 'jukebox_web_theme' 'light' %}">{% trans 'Light' %}</a>
                 </li>
             </ul>
             <h1>{% trans 'Misc' %}</h1>

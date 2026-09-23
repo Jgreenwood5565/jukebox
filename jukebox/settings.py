@@ -88,6 +88,7 @@ TEMPLATES = [
                 "django.template.context_processors.i18n",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "jukebox.jukebox_web.context_processors.theme",
             ],
         },
     },
@@ -143,6 +144,16 @@ SOCIAL_AUTH_LOGIN_REDIRECT_URL = LOGIN_REDIRECT_URL
 
 # seconds of inactivity after which a web user no longer counts as listening
 SESSION_TTL = 300
+
+# allow logging in with a jukebox username and password (create users with
+# "jukebox jukebox_adduser" or in the admin), in addition to social auth
+JUKEBOX_LOCAL_LOGIN = _env_bool("JUKEBOX_LOCAL_LOGIN", True)
+# failed local logins per user and IP address before further attempts are refused
+JUKEBOX_LOGIN_ATTEMPTS = 10
+JUKEBOX_LOGIN_LOCKOUT = 15 * 60
+
+# "dark" or "light", every user can switch in the account menu
+JUKEBOX_DEFAULT_THEME = os.environ.get("JUKEBOX_DEFAULT_THEME", "dark")
 
 _local_settings = JUKEBOX_STORAGE_PATH / "settings_local.py"
 if _local_settings.is_file():

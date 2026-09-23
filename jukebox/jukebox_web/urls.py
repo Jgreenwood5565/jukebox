@@ -5,9 +5,10 @@ from . import views
 
 urlpatterns = [
     path("", views.index, name="jukebox_web_index"),
-    path("login", views.login, name="jukebox_web_login"),
-    path("login/error", views.login_error, name="jukebox_web_login_error"),
+    path("login", views.LoginView.as_view(), name="jukebox_web_login"),
+    path("login/error", views.LoginErrorView.as_view(), name="jukebox_web_login_error"),
     path("language/set/<slug:language>", views.language, name="jukebox_web_language"),
+    path("theme/set/<slug:theme>", views.theme, name="jukebox_web_theme"),
     path("logout", views.logout, name="jukebox_web_logout"),
     path(
         "jsi18n/",

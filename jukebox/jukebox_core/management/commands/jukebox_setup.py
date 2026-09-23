@@ -60,8 +60,6 @@ class Command(BaseCommand):
         self.stdout.write("")
 
         authentication = self.read_authentication()
-        while not authentication:
-            authentication = self.read_authentication()
 
         with open(
             os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8"
@@ -70,6 +68,10 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Setup finished, configuration written to {target}"))
         self.stdout.write("----------------------------------------------")
+        self.stdout.write("Next steps:")
+        self.stdout.write("\tjukebox migrate")
+        self.stdout.write("\tjukebox jukebox_adduser <username> --admin")
+        self.stdout.write("\tjukebox jukebox_index --path=/path/to/library")
 
     def ask(self, prompt):
         value = ""
@@ -78,8 +80,12 @@ class Command(BaseCommand):
         return value
 
     def read_authentication(self):
-        self.stdout.write("Please select your authentication methods")
+        self.stdout.write("Social login (optional)")
         self.stdout.write("----------------------------------------------")
+        self.stdout.write(
+            "Users can always log in with a local account, create one with "
+            "'jukebox jukebox_adduser <username>'."
+        )
         self.stdout.write(
             "Available providers: " + ", ".join(p["label"] for p in PROVIDERS.values())
         )
@@ -97,12 +103,6 @@ class Command(BaseCommand):
             if data is not None:
                 authentication[name] = data
             self.stdout.write("")
-
-        if not authentication:
-            self.stdout.write("Are you kidding me? Why didn't you select a provider?")
-            self.stdout.write("I won't let you go until you select at least one of them.")
-            self.stdout.write("")
-            return None
 
         return authentication
 

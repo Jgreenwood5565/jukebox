@@ -1,6 +1,6 @@
 {% load i18n static %}<!DOCTYPE html>
 {% get_current_language as LANGUAGE_CODE %}
-<html lang="{{ LANGUAGE_CODE }}">
+<html lang="{{ LANGUAGE_CODE }}" data-theme="{{ theme }}">
     <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -24,15 +24,33 @@
         </div>
         <div id="content">
             <div id="main">
-                {% if error %}
-                    {% for msg in error %}
-                        <p class="login_error">{{ msg.message }}</p>
-                    {% endfor %}
+                {% for msg in error %}
+                    <p class="login_error">{{ msg.message }}</p>
+                {% endfor %}
+                {% if local_login %}
+                    <form method="post" action="{% url 'jukebox_web_login' %}" class="localLogin">
+                        {% csrf_token %}
+                        {% if locked %}
+                            <p class="login_error">{% trans 'Too many failed login attempts, please try again later.' %}</p>
+                        {% endif %}
+                        {% for error in form.non_field_errors %}
+                            <p class="login_error">{{ error }}</p>
+                        {% endfor %}
+                        <label for="id_username">{% trans 'Username' %}</label>
+                        <input type="text" name="username" id="id_username" value="{{ form.username.value|default_if_none:'' }}" autocomplete="username" autocapitalize="none" maxlength="150" required autofocus />
+                        <label for="id_password">{% trans 'Password' %}</label>
+                        <input type="password" name="password" id="id_password" autocomplete="current-password" required />
+                        <input type="hidden" name="next" value="{{ next }}" />
+                        <button type="submit" class="submit">{% trans 'Login' %}</button>
+                    </form>
+                    {% if backends %}
+                        <p class="loginSeparator">{% trans 'or' %}</p>
+                    {% endif %}
                 {% endif %}
                 <div class="login">
                     {% for backend in backends %}
                         <div>
-                            <a rel="nofollow" href="{% url 'social:begin' backend %}">
+                            <a rel="nofollow" href="{% url 'social:begin' backend %}{% if next %}?next={{ next|urlencode }}{% endif %}">
                                 <img src="{% static 'img/' %}{{ backend }}.png" alt="{% blocktrans %}Login with your {{ backend }} account{% endblocktrans %}" title="{% blocktrans %}Login with your {{ backend }} account{% endblocktrans %}" />
                             </a>
                         </div>

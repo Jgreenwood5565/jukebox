@@ -1,13 +1,18 @@
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from jukebox.jukebox_core.models import Artist, Queue, Song
 
 
-@override_settings(SOCIAL_AUTH_ENABLED_BACKENDS=["github"])
+@override_settings(
+    SOCIAL_AUTH_ENABLED_BACKENDS=["github"],
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
 class WebTest(TestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user("listener", "l@example.org", "pw")
 
     def testIndexRequiresLogin(self):
@@ -17,6 +22,68 @@ class WebTest(TestCase):
     def testLoginPage(self):
         response = self.client.get("/login")
         self.assertContains(response, 'href="/login/github/"')
+        self.assertContains(response, 'name="password"')
+
+    def testLocalLogin(self):
+        response = self.client.post("/login", {"username": "listener", "password": "pw"})
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.id)
+
+    def testLocalLoginKeepsNext(self):
+        response = self.client.get("/login?next=/admin/")
+        self.assertContains(response, 'href="/login/github/?next=/admin/"')
+        response = self.client.post(
+            "/login", {"username": "listener", "password": "pw", "next": "/admin/"}
+        )
+        self.assertRedirects(response, "/admin/", fetch_redirect_response=False)
+
+    def testLocalLoginRejectsWrongPassword(self):
+        response = self.client.post("/login", {"username": "listener", "password": "nope"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "login_error")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @override_settings(JUKEBOX_LOGIN_ATTEMPTS=3)
+    def testLocalLoginIsRateLimited(self):
+        for _ in range(3):
+            self.client.post("/login", {"username": "listener", "password": "nope"})
+        response = self.client.post("/login", {"username": "listener", "password": "pw"})
+        self.assertEqual(response.status_code, 429)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        # other users are not affected
+        User.objects.create_user("other", password="pw2")
+        response = self.client.post("/login", {"username": "other", "password": "pw2"})
+        self.assertEqual(response.status_code, 302)
+
+    @override_settings(JUKEBOX_LOCAL_LOGIN=False)
+    def testLocalLoginCanBeDisabled(self):
+        self.assertNotContains(self.client.get("/login"), 'name="password"')
+        response = self.client.post("/login", {"username": "listener", "password": "pw"})
+        self.assertEqual(response.status_code, 405)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def testThemeDefaultsToDark(self):
+        self.assertContains(self.client.get("/login"), 'data-theme="dark"')
+
+    def testThemeSwitch(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/theme/set/light")
+        self.assertRedirects(response, "/")
+        self.assertContains(self.client.get("/"), 'data-theme="light"')
+        self.client.get("/theme/set/neon")
+        self.assertContains(self.client.get("/"), 'data-theme="light"')
+
+    def testAddUserCommand(self):
+        from unittest import mock
+
+        from django.core.management import call_command
+
+        with mock.patch("getpass.getpass", return_value="correct horse battery"):
+            call_command("jukebox_adduser", "dj", "--name", "Dee Jay", "--admin", stdout=None)
+        user = User.objects.get(username="dj")
+        self.assertTrue(user.check_password("correct horse battery"))
+        self.assertEqual(user.get_full_name(), "Dee Jay")
+        self.assertTrue(user.is_superuser)
 
     def testLoginRedirectsAuthenticatedUser(self):
         self.client.force_login(self.user)
