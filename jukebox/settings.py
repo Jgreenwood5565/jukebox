@@ -42,6 +42,13 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": JUKEBOX_STORAGE_PATH / "db.sqlite",
+        "OPTIONS": {
+            # a transaction that reads before writing (e.g. picking the next song)
+            # fails with "database is locked" while another request writes, unless
+            # it takes the write lock right away and waits for it
+            "transaction_mode": "IMMEDIATE",
+            "timeout": 20,
+        },
     }
 }
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
@@ -151,6 +158,11 @@ JUKEBOX_LOCAL_LOGIN = _env_bool("JUKEBOX_LOCAL_LOGIN", True)
 # failed local logins per user and IP address before further attempts are refused
 JUKEBOX_LOGIN_ATTEMPTS = 10
 JUKEBOX_LOGIN_LOCKOUT = 15 * 60
+
+# play the queue in the browser: the server keeps the "now playing" clock and
+# every listener hears the same song. Turn off if a player plugin (jukebox_mpg123,
+# jukebox_shout, ...) plays the queue instead, both would pick songs.
+JUKEBOX_WEB_PLAYER = _env_bool("JUKEBOX_WEB_PLAYER", True)
 
 # "dark" or "light", every user can switch in the account menu
 JUKEBOX_DEFAULT_THEME = os.environ.get("JUKEBOX_DEFAULT_THEME", "dark")

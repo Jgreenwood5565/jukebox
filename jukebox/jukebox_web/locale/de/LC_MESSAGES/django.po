@@ -170,3 +170,6 @@ msgstr "Dunkel"
 
 msgid "Light"
 msgstr "Hell"
+
+msgid "Volume"
+msgstr "Lautstärke"

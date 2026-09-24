@@ -11,6 +11,8 @@ taste of whoever is currently online.
 
 ## Features
 
+- **Web player**: press play in the browser and hear the jukebox; everyone listening hears the same
+  song at the same time
 - **Voting queue**: the most-voted song plays next; ties go to whoever voted first
 - **Smart autoplay**: with an empty queue it picks artists from the favourites and voting history of
   the people who are online
@@ -26,7 +28,7 @@ taste of whoever is currently online.
 ## Requirements
 
 - Python 3.10 or newer
-- A playback plugin to actually play the music (see [Playback](#playback))
+- A browser; speakers attached to the server are optional (see [Playback](#playback))
 
 ## Quick start
 
@@ -85,6 +87,7 @@ directory. `settings_local.py` can override any Django setting; see
 | `DEBUG` / `JUKEBOX_DEBUG` | off | Django debug mode, never enable it on a shared network |
 | `SECRET_KEY` / `JUKEBOX_SECRET_KEY` | generated | Signs sessions, created on first start if unset |
 | `JUKEBOX_LOCAL_LOGIN` | on | Username/password login on the login page |
+| `JUKEBOX_WEB_PLAYER` | on | Play the queue in the browser, turn off when a playback plugin plays it |
 | `JUKEBOX_DEFAULT_THEME` | `dark` | `dark` or `light`, users can switch in the account menu |
 | `JUKEBOX_LOGIN_ATTEMPTS` | `10` | Failed logins per user and IP before a 15 minute lockout |
 | `SESSION_TTL` | `300` | Seconds without activity before a user no longer counts as online |
@@ -111,7 +114,17 @@ step.
 
 ## Playback
 
-The web interface only manages the queue. A playback plugin pulls the next song and plays it:
+The jukebox plays in the browser. Press the play button next to "Now playing" and the page streams
+the current song from the server. The server keeps the clock: everyone listening hears the same song
+at the same position, a song picked from the queue starts for all listeners at once, and skipping
+skips for everyone. The jukebox only moves on while at least one person has the page open. Phones
+show the song on the lock screen.
+
+The audio is plain HTTP from the jukebox, so each listener downloads every song it plays; that is
+small for a home network but worth knowing on a metered connection.
+
+Before the web player, playback plugins pulled the next song and played it. To use one, set
+`JUKEBOX_WEB_PLAYER=0`, since both would pick songs:
 
 - [jukebox_mpg123](https://github.com/lociii/jukebox_mpg123) plays through `mpg123` on the jukebox
   machine

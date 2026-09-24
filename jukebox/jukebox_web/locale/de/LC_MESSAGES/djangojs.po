@@ -96,3 +96,9 @@ msgstr "Name"
 #: static/js/music.js:451
 msgid "Autoplay"
 msgstr "automatisch"
+
+msgid "Listen"
+msgstr "Anhören"
+
+msgid "Stop listening"
+msgstr "Nicht mehr anhören"

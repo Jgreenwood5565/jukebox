@@ -32,6 +32,7 @@ def index(request):
         "username": request.user.get_full_name() or request.user.get_username(),
         "genres": Genre.objects.all(),
         "years": years,
+        "web_player": settings.JUKEBOX_WEB_PLAYER,
     }
     return render(request, "index.html", context)
 

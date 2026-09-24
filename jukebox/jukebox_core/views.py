@@ -1,3 +1,9 @@
+import mimetypes
+import os
+import re
+
+from django.conf import settings
+from django.http import HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -91,7 +97,10 @@ class songs(ListView):
 class songs_current(JukeboxAPIView):
     def get(self, request):
         try:
-            current = api.history().getCurrent()
+            if settings.JUKEBOX_WEB_PLAYER:
+                current = api.radio().current()
+            else:
+                current = api.history().getCurrent()
         except History.DoesNotExist:
             current = {}
 
@@ -100,8 +109,85 @@ class songs_current(JukeboxAPIView):
 
 class songs_skip(JukeboxAPIView):
     def post(self, request):
-        api.songs().skipCurrentSong()
+        if settings.JUKEBOX_WEB_PLAYER:
+            api.radio().skip()
+        else:
+            api.songs().skipCurrentSong()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
+STREAM_CHUNK_SIZE = 64 * 1024
+
+
+def _read_chunks(file, length):
+    try:
+        while length > 0:
+            chunk = file.read(min(STREAM_CHUNK_SIZE, length))
+            if not chunk:
+                break
+            length -= len(chunk)
+            yield chunk
+    finally:
+        file.close()
+
+
+def ranged_file_response(request, path):
+    """Serve a file supporting a single HTTP byte range.
+
+    Browsers request ranges to seek in audio, Safari doesn't play audio at all
+    without them. Raises ``OSError`` if the file can't be read.
+    """
+    # closed by _read_chunks
+    file = open(path, "rb")
+    size = os.fstat(file.fileno()).st_size
+    start, end = 0, size - 1
+
+    match = RANGE_PATTERN.match(request.headers.get("Range", ""))
+    ranged = match is not None and bool(match[1] or match[2])
+    if ranged:
+        if match[1]:
+            start = int(match[1])
+            if match[2]:
+                end = min(int(match[2]), end)
+        else:
+            # suffix range, the last n bytes
+            start = max(size - int(match[2]), 0)
+        if start > end:
+            file.close()
+            response = HttpResponse(status=416)
+            response["Content-Range"] = f"bytes */{size}"
+            return response
+
+    file.seek(start)
+    length = end - start + 1
+    content_type = mimetypes.guess_type(path)[0] or "audio/mpeg"
+    response = StreamingHttpResponse(
+        _read_chunks(file, length),
+        status=206 if ranged else 200,
+        content_type=content_type,
+    )
+    response["Content-Length"] = str(length)
+    response["Accept-Ranges"] = "bytes"
+    if ranged:
+        response["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return response
+
+
+class songs_stream(JukeboxAPIView):
+    def perform_content_negotiation(self, request, force=False):
+        # the audio isn't rendered by DRF, don't fail on the browser's audio Accept header
+        return super().perform_content_negotiation(request, force=True)
+
+    def get(self, request, song_id):
+        if not settings.JUKEBOX_WEB_PLAYER:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            song = Song.objects.get(id=song_id)
+            return ranged_file_response(request, song.Filename)
+        except (Song.DoesNotExist, OSError):
+            return Response(status=status.HTTP_404_NOT_FOUND)
 
 
 class artists(ListView):

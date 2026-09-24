@@ -6,6 +6,7 @@ Playback plugins (jukebox_shout, jukebox_mpg123, ...) rely on ``songs``,
 
 import os
 import re
+import threading
 import time
 from collections import Counter
 from signal import SIGABRT
@@ -476,8 +477,16 @@ class history(api_base):
         if item is None:
             raise History.DoesNotExist("Nothing played yet")
 
+        position = max(time.time() - item.Created.timestamp(), 0)
         dataset = _voted_song_data(item)
-        dataset["remaining"] = int(item.Created.timestamp() + item.Song.Length - time.time())
+        dataset.update(
+            {
+                "historyId": item.id,
+                "length": item.Song.Length,
+                "position": round(position, 1),
+                "remaining": int(item.Song.Length - position),
+            }
+        )
         return dataset
 
 
@@ -654,6 +663,37 @@ class years(api_base):
         object_list = Song.objects.values("Year").exclude(Year=None).exclude(Year=0).distinct()
         object_list = self.source_set_order(object_list)
         return self.build_result(object_list, page, lambda item: {"year": item["Year"]})
+
+
+# picking the next song must happen once, gunicorn runs a single process
+_radio_lock = threading.Lock()
+
+
+class radio:
+    """Clock of the web player, every listener hears the same song.
+
+    The newest history entry is on air since its ``Created`` time. Once it is
+    over, the next request for the current song picks the next one, so the
+    jukebox only moves on while somebody has it open.
+    """
+
+    def current(self):
+        with _radio_lock:
+            item = History.objects.select_related("Song").first()
+            if item is None or item.Created.timestamp() + item.Song.Length <= time.time():
+                self._next()
+        return history().getCurrent()
+
+    def skip(self):
+        with _radio_lock:
+            self._next()
+
+    def _next(self):
+        try:
+            songs().getNextSong()
+        except Song.DoesNotExist:
+            # empty library, nothing to play
+            pass
 
 
 class players(api_base):

@@ -4,7 +4,7 @@ import tempfile
 from datetime import timedelta
 from unittest import mock
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 from mutagen.easyid3 import EasyID3
 
@@ -43,6 +43,7 @@ class AuthenticationTest(ApiTestBase):
         self.passwords[self.user.id] = "wrong"
         self.assertIn(self.httpGet("/api/v1/songs").status_code, (401, 403))
 
+    @override_settings(JUKEBOX_WEB_PLAYER=False)
     def testSkipRequiresPost(self):
         self.assertEqual(self.httpGet("/api/v1/songs/skip").status_code, 405)
         with mock.patch("jukebox.jukebox_core.api.os.kill") as kill:

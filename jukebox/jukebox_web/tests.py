@@ -99,6 +99,12 @@ class WebTest(TestCase):
         self.assertContains(response, "jquery-3.7.1.min.js")
         self.assertEqual(self.client.session.get_expiry_age(), settings.SESSION_TTL)
 
+    def testWebPlayer(self):
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get("/"), 'id="listen"')
+        with self.settings(JUKEBOX_WEB_PLAYER=False):
+            self.assertNotContains(self.client.get("/"), 'id="listen"')
+
     def testLogoutRequiresPost(self):
         self.client.force_login(self.user)
         self.assertEqual(self.client.get("/logout").status_code, 405)

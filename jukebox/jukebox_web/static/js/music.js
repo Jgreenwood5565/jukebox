@@ -161,6 +161,183 @@
     };
     LISTS["history/my"] = LISTS.history;
 
+    const POLL_INTERVAL = 10000;
+    // a listener lagging behind by up to this many seconds hears a new song
+    // from its start instead of jumping into it
+    const START_TOLERANCE = 10;
+    // seconds of slack when telling a finished song from a skipped one
+    const END_SLACK = 3;
+    const VOLUME_KEY = "jukebox.volume";
+
+    // storage is unavailable in some private windows
+    function storageGet(key) {
+        try {
+            return window.localStorage.getItem(key);
+        }
+        catch (error) {
+            return null;
+        }
+    }
+
+    function storageSet(key, value) {
+        try {
+            window.localStorage.setItem(key, value);
+        }
+        catch (error) {
+            // the volume just isn't remembered
+        }
+    }
+
+    // plays the song on air, the server decides what that is and when it's over
+    const Player = {
+        audio: null,
+        listening: false,
+        historyId: null,
+        current: null,
+        fetched: 0,
+        // seconds this browser plays behind the server clock
+        lag: 0,
+        pollTimer: null,
+
+        init: function () {
+            if ($("#listen").length === 0) {
+                return;
+            }
+
+            const audio = new Audio();
+            audio.preload = "auto";
+            audio.addEventListener("ended", () => {
+                Music.getCurrentSong();
+            });
+            audio.addEventListener("error", () => {
+                // e.g. the file is gone, the next poll tries again
+                if (Player.listening) {
+                    Player.historyId = null;
+                }
+            });
+            Player.audio = audio;
+
+            const volume = parseFloat(storageGet(VOLUME_KEY));
+            if (volume >= 0 && volume <= 1) {
+                audio.volume = volume;
+                $("#volume").val(volume);
+            }
+            $("#volume").on("input", function () {
+                audio.volume = this.value;
+                storageSet(VOLUME_KEY, this.value);
+            });
+
+            $("#listen").on("click", () => {
+                if (Player.listening) {
+                    Player.stop();
+                }
+                else {
+                    Player.start();
+                }
+            });
+
+            if ("mediaSession" in navigator) {
+                navigator.mediaSession.setActionHandler("play", Player.start);
+                navigator.mediaSession.setActionHandler("pause", Player.stop);
+            }
+
+            Player.setButton();
+        },
+
+        start: function () {
+            Player.listening = true;
+            Player.historyId = null;
+            Player.setButton();
+            // start within the click, some browsers only allow audio then
+            Player.sync();
+            Player.poll();
+        },
+
+        stop: function () {
+            Player.listening = false;
+            Player.historyId = null;
+            clearTimeout(Player.pollTimer);
+            Player.audio.pause();
+            Player.audio.removeAttribute("src");
+            Player.audio.load();
+            Player.setButton();
+        },
+
+        // skips by other listeners only show up when asking
+        poll: function () {
+            clearTimeout(Player.pollTimer);
+            if (!Player.listening) {
+                return;
+            }
+            Music.getCurrentSong();
+            Player.pollTimer = setTimeout(Player.poll, POLL_INTERVAL);
+        },
+
+        // called with every response of /api/v1/songs/current
+        receive: function (data) {
+            Player.current = data;
+            Player.fetched = Date.now();
+            if (Player.listening && data.historyId === Player.historyId && !Player.audio.paused) {
+                Player.lag = Math.max(data.position - Player.audio.currentTime, 0);
+            }
+            Player.sync();
+        },
+
+        sync: function () {
+            const data = Player.current;
+            if (!Player.listening || !data || !("historyId" in data) ||
+                data.historyId === Player.historyId) {
+                return;
+            }
+
+            // if the song here simply ended on the server, what's left of it
+            // is about the lag, anything more means it was skipped
+            const audio = Player.audio;
+            const left = audio.duration - audio.currentTime;
+            if (Player.historyId !== null && !audio.paused && !audio.ended &&
+                left + data.position < Player.lag + END_SLACK) {
+                // "ended" syncs again
+                return;
+            }
+
+            Player.play(data);
+        },
+
+        play: function (data) {
+            let position = data.position + (Date.now() - Player.fetched) / 1000;
+            if (position < START_TOLERANCE) {
+                position = 0;
+            }
+
+            Player.historyId = data.historyId;
+            Player.lag = 0;
+            Player.audio.src = "/api/v1/songs/" + encodeURIComponent(data.id) + "/stream" +
+                (position > 0 ? "#t=" + position.toFixed(1) : "");
+            Player.audio.play().catch((error) => {
+                // the browser wants a click first, a new song interrupting is fine
+                if (error.name === "NotAllowedError") {
+                    Player.stop();
+                }
+            });
+
+            if ("mediaSession" in navigator && typeof window.MediaMetadata === "function") {
+                navigator.mediaSession.metadata = new window.MediaMetadata({
+                    title: data.title,
+                    artist: data.artist.name || "",
+                    album: data.album.title || ""
+                });
+            }
+        },
+
+        setButton: function () {
+            const label = Player.listening ? gettext("Stop listening") : gettext("Listen");
+            $("#listen")
+                .toggleClass("playing", Player.listening)
+                .attr({"aria-pressed": String(Player.listening), "title": label, "aria-label": label});
+            $("#volume").toggle(Player.listening);
+        }
+    };
+
     const Music = {
         url: null,
         pageNum: 1,
@@ -202,6 +379,7 @@
 
             $(window).on("scroll", Music.loadOnScroll);
 
+            Player.init();
             Music.getCurrentSong();
             Music.ping();
             Music.loadList("/api/v1/queue");
@@ -427,6 +605,7 @@
         getCurrentSong: function () {
             clearTimeout(Music.currentSongTimer);
             $.ajax({url: "/api/v1/songs/current"}).done((data) => {
+                Player.receive(data);
                 if ("id" in data) {
                     $("#currentSong strong").show();
                     $("#currentSong span.songTitle").text(data.artist.name + " - " + data.title);

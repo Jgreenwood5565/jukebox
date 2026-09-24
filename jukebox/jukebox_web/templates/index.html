@@ -31,13 +31,20 @@
                     </form>
                 </div>
             </div>
-            <div id="currentSong">
+            <div id="currentSong"{% if web_player %} class="withPlayer"{% endif %}>
+                {% if web_player %}
+                    <button type="button" id="listen" aria-pressed="false"></button>
+                {% endif %}
                 <strong>
                     {% trans 'Now playing' %}
                 </strong>
                 <br />
                 <span class="songTitle"></span>
                 <span class="timeRemaining"></span>
+                {% if web_player %}
+                    <input type="range" id="volume" min="0" max="1" step="0.05" value="1"
+                        title="{% trans 'Volume' %}" aria-label="{% trans 'Volume' %}" />
+                {% endif %}
             </div>
         </div>
         <div id="content">

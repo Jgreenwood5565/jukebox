@@ -20,6 +20,7 @@ GET methods
 
     /api/v1/songs
     /api/v1/songs/current
+    /api/v1/songs/[song_id]/stream
     /api/v1/artists
     /api/v1/albums
     /api/v1/genres
@@ -65,8 +66,17 @@ List songs
 
 **/api/v1/songs/current**
 
-Get the song currently playing including its voters and the seconds remaining (``remaining``).
-Returns an empty object if nothing has been played yet.
+Get the song currently playing including its voters, its ``length``, the seconds played (``position``)
+and remaining (``remaining``) and ``historyId``, which changes with every song played, even if the same
+song plays twice in a row. Returns an empty object if nothing has been played yet.
+
+With the web player enabled (``JUKEBOX_WEB_PLAYER``, the default) this request also moves the jukebox on:
+once the current song is over, it picks the next one.
+
+**/api/v1/songs/[song_id]/stream**
+
+The audio file of a song. Supports a single HTTP byte range (``Range: bytes=start-end``) for seeking.
+Responds with ``404`` if the web player is disabled or the file is gone.
 
 **/api/v1/artists**
 
@@ -188,7 +198,7 @@ Add song to favourite list. Responds with ``201`` if the song was added and ``20
 
 **/api/v1/songs/skip**
 
-Skip the song currently playing. Responds with ``204``.
+Skip the song currently playing, for every listener. Responds with ``204``.
 
 DELETE methods
 ===============
