@@ -150,8 +150,9 @@ formats are converted to 192 kbit/s MP3 on the fly, so hi-res files stream fine 
 comes from the files' tags or a `cover.jpg` next to them. The jukebox only moves on while at least
 one person has the page open. Phones show the song and its cover on the lock screen.
 
-Every listener streams from the jukebox, about 1.5 MB per minute at 192 kbit/s. Converting costs CPU
-for each listener; a Raspberry Pi handles a household of listeners.
+Every listener streams from the jukebox, about 1.5 MB per minute at 192 kbit/s. Converting takes one
+CPU core per listener: a Raspberry Pi 3 converts FLAC, even 24 bit/192 kHz, about 3.5 times faster
+than it plays, so its four cores keep up with roughly ten listeners.
 
 Before the web player, playback plugins pulled the next song and played it. To use one, set
 `JUKEBOX_WEB_PLAYER=0`, since both would pick songs:
