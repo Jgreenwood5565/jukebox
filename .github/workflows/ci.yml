@@ -10,8 +10,6 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      JUKEBOX_HOME: ${{ runner.temp }}/jukebox
     strategy:
       matrix:
         python-version: ["3.10", "3.13"]
@@ -20,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      # the runner context isn't available in job level env, set it for all later steps
+      - run: echo "JUKEBOX_HOME=$RUNNER_TEMP/jukebox" >> "$GITHUB_ENV"
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
