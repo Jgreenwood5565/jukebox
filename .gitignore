@@ -13,3 +13,6 @@ __pycache__/
 *.sw*
 jukebox/settings_local.py
 .env
+
+# local session notes, not for the public repo
+docs/HANDOFF.md
