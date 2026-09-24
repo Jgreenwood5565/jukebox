@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import translation
 from django.views.decorators.http import require_POST
 
-from jukebox.jukebox_core import throttle
+from jukebox.jukebox_core import api, throttle
 from jukebox.jukebox_core.models import Genre, Song
 
 from .context_processors import THEME_COOKIE_NAME, THEMES
@@ -17,7 +17,7 @@ from .context_processors import THEME_COOKIE_NAME, THEMES
 
 @login_required
 def index(request):
-    request.session.set_expiry(settings.SESSION_TTL)
+    api.mark_online(request.user.id)
 
     years = (
         Song.objects.values_list("Year", flat=True)

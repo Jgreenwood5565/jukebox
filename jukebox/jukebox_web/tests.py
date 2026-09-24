@@ -97,7 +97,7 @@ class WebTest(TestCase):
         response = self.client.get("/")
         self.assertContains(response, '<option value="1999">1999</option>', html=True)
         self.assertContains(response, "jquery-3.7.1.min.js")
-        self.assertEqual(self.client.session.get_expiry_age(), settings.SESSION_TTL)
+        self.assertEqual(self.client.session.get_expiry_age(), settings.SESSION_COOKIE_AGE)
 
     def testWebPlayer(self):
         self.client.force_login(self.user)

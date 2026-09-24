@@ -1,6 +1,8 @@
 import math
 import os
 import re
+import threading
+from collections import Counter
 
 from django.conf import settings
 from django.http import HttpResponse, StreamingHttpResponse
@@ -20,8 +22,8 @@ class JukeboxAPIView(APIView):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        # refresh the session expiry, active sessions decide what autoplay picks
-        request.session.modified = True
+        # whoever is online decides what autoplay picks
+        api.mark_online(self.request.user.id)
 
     def get_api(self):
         api_obj = self.api_class()
@@ -206,18 +208,41 @@ def ranged_file_response(request, path):
     return response
 
 
-def _pipe_chunks(process):
-    try:
+# every conversion takes a CPU core; a web player needs one, plus a moment of
+# overlap when the song changes
+TRANSCODES_PER_USER = 3
+_transcodes = Counter()
+_transcodes_lock = threading.Lock()
+
+
+class TranscodedStream:
+    """ffmpeg's output as response content.
+
+    Django closes it with the response, even one that never started sending,
+    which stops ffmpeg and frees the user's conversion slot.
+    """
+
+    def __init__(self, process, user_id):
+        self.process = process
+        self.user_id = user_id
+        self.closed = False
+
+    def __iter__(self):
         while True:
-            chunk = process.stdout.read1(STREAM_CHUNK_SIZE)
+            chunk = self.process.stdout.read1(STREAM_CHUNK_SIZE)
             if not chunk:
-                break
+                return
             yield chunk
-    finally:
-        # the listener left or the song is done
-        process.kill()
-        process.wait()
-        process.stdout.close()
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        self.process.kill()
+        self.process.wait()
+        self.process.stdout.close()
+        with _transcodes_lock:
+            _transcodes[self.user_id] -= 1
 
 
 def transcoded_response(request, path):
@@ -235,9 +260,19 @@ def transcoded_response(request, path):
     if not math.isfinite(start) or start < 0:
         start = 0
 
-    response = StreamingHttpResponse(
-        _pipe_chunks(media.transcode(path, start)), content_type="audio/mpeg"
-    )
+    user_id = request.user.id
+    with _transcodes_lock:
+        if _transcodes[user_id] >= TRANSCODES_PER_USER:
+            return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
+        _transcodes[user_id] += 1
+    try:
+        stream = TranscodedStream(media.transcode(path, start), user_id)
+    except BaseException:
+        with _transcodes_lock:
+            _transcodes[user_id] -= 1
+        raise
+
+    response = StreamingHttpResponse(stream, content_type="audio/mpeg")
     response["Accept-Ranges"] = "none"
     response["Cache-Control"] = "no-store"
     return response

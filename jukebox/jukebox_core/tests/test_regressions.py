@@ -207,9 +207,15 @@ class PlaybackTest(ApiTestBase):
             self.addSong(artist=self.addArtist(name="other"), filename=__file__)
         Favourite.objects.create(Song=song, User=self.user)
 
-        client = Client()
-        client.force_login(self.user)
+        # any API request marks the user as online
+        self.httpGet("/api/v1/ping")
         self.assertEqual(api.songs().getNextSong(), song)
+
+    def testOnlineUsersTimeOut(self):
+        api.mark_online(self.user.id)
+        self.assertEqual(api.online_user_ids(), {self.user.id})
+        with mock.patch("jukebox.jukebox_core.api.time.time", return_value=10**10):
+            self.assertEqual(api.online_user_ids(), set())
 
     def testCurrentSongRemaining(self):
         song = self.addSong(artist=self.addArtist(), length=300)

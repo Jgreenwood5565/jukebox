@@ -11,7 +11,7 @@ import time
 from collections import Counter
 from signal import SIGABRT
 
-from django.contrib.sessions.models import Session
+from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import InvalidPage, Paginator
@@ -24,6 +24,31 @@ from .models import Album, Artist, Favourite, Genre, History, Player, Queue, Son
 SEARCH_KEYWORDS = ("title", "artist", "album", "genre", "year")
 
 SONG_RELATED = ("Artist", "Album", "Genre")
+
+# who used the jukebox lately, autoplay picks what they like
+ONLINE_KEY = "jukebox:online"
+_online_lock = threading.Lock()
+
+
+def mark_online(user_id):
+    now = time.time()
+    with _online_lock:
+        online = cache.get(ONLINE_KEY, {})
+        # every request calls this, only write the cache now and then
+        if now - online.get(user_id, 0) < 30:
+            return
+        online = {uid: seen for uid, seen in online.items() if now - seen < settings.SESSION_TTL}
+        online[user_id] = now
+        cache.set(ONLINE_KEY, online, None)
+
+
+def online_user_ids():
+    now = time.time()
+    return {
+        user_id
+        for user_id, seen in cache.get(ONLINE_KEY, {}).items()
+        if now - seen < settings.SESSION_TTL
+    }
 
 
 def parse_search_string(keywords, term):
@@ -390,16 +415,9 @@ class songs(api_base):
         return song_instance
 
     def getRandomSongByPreferences(self):  # noqa: N802
-        # users with an active web session
-        user_ids = set()
-        for session in Session.objects.filter(expire_date__gt=timezone.now()):
-            user_id = session.get_decoded().get("_auth_user_id")
-            if user_id is not None:
-                user_ids.add(user_id)
-
-        # artists of their newest favourites and recently voted songs
+        # artists of the newest favourites and recently voted songs of whoever is online
         artists = Counter()
-        for user_id in user_ids:
+        for user_id in online_user_ids():
             artists.update(
                 Favourite.objects.filter(User__id=user_id).values_list("Song__Artist", flat=True)[
                     :30

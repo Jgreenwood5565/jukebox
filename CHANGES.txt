@@ -37,6 +37,8 @@ v0.6.0, unreleased -- Web player
     - Vote to skip: a song is skipped once most listeners vote, admins skip at once
     - Admins manage accounts in the web interface: add users, set passwords,
       grant admin rights, disable and delete accounts
+    - Logins last 30 days instead of ending after 5 idle minutes
+    - At most 3 converted streams per user at a time
     - Ready for the internet: failed logins are limited for the admin and API
       basic auth too, real client addresses behind a trusted proxy, secure
       cookies for HTTPS, password rules and a Content-Security-Policy

@@ -150,8 +150,10 @@ LOGIN_REDIRECT_URL = "/"
 SOCIAL_AUTH_LOGIN_ERROR_URL = LOGIN_ERROR_URL
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = LOGIN_REDIRECT_URL
 
-# seconds of inactivity after which a web user no longer counts as listening
+# seconds of inactivity after which a user no longer counts as online for autoplay
 SESSION_TTL = 300
+# stay logged in for 30 days
+SESSION_COOKIE_AGE = 30 * 24 * 60 * 60
 
 # allow logging in with a jukebox username and password (create users with
 # "jukebox jukebox_adduser" or in the admin), in addition to social auth

@@ -9,7 +9,7 @@ from unittest import mock
 from django.test import Client, override_settings
 from django.utils import timezone
 
-from jukebox.jukebox_core import media
+from jukebox.jukebox_core import media, views
 from jukebox.jukebox_core.models import History
 
 from .base import ApiTestBase, write_flac
@@ -318,3 +318,23 @@ class TranscodeTest(ApiTestBase):
         with self.settings(JUKEBOX_TRANSCODE=False):
             current = json.loads(self.httpGet("/api/v1/songs/current").content)
             self.assertFalse(current["transcoded"])
+
+    def testConversionsPerUserAreLimited(self, ffmpeg):
+        views._transcodes.clear()
+        with mock.patch("jukebox.jukebox_core.media.transcode", side_effect=fake_ffmpeg):
+            open_streams = [self.httpGet(self.url) for _ in range(views.TRANSCODES_PER_USER)]
+            self.assertEqual(self.httpGet(self.url).status_code, 429)
+            # others can still listen
+            other = self.addUser("Other", "other@domain.org", "OtherPassword")
+            response = self.httpGet(self.url, user=other)
+            self.assertEqual(response.status_code, 200)
+            b"".join(response.streaming_content)
+
+            # a stream that ends frees its slot, even without sending anything
+            open_streams.pop().close()
+            response = self.httpGet(self.url)
+            self.assertEqual(response.status_code, 200)
+            open_streams.append(response)
+            for response in open_streams:
+                response.close()
+        self.assertEqual(sum(views._transcodes.values()), 0)

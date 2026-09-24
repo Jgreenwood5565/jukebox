@@ -102,6 +102,7 @@ directory. `settings_local.py` can override any Django setting; see
 | `JUKEBOX_DEFAULT_THEME` | `dark` | `dark` or `light`, users can switch in the account menu |
 | `JUKEBOX_LOGIN_ATTEMPTS` | `10` | Failed logins per user and IP before a 15 minute lockout |
 | `SESSION_TTL` | `300` | Seconds without activity before a user no longer counts as online |
+| `SESSION_COOKIE_AGE` | 30 days | How long a login lasts |
 
 ### Social login
 
