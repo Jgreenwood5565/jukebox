@@ -137,6 +137,9 @@ class WebTest(TestCase):
         queue_b.User.add(self.user, other)
 
         response = self.client.get("/feed/")
+        self.assertRedirects(response, "/login?next=/feed/", fetch_redirect_response=False)
+        self.client.force_login(self.user)
+        response = self.client.get("/feed/")
         self.assertContains(response, "<title>popular</title>")
         self.assertNotContains(response, "<title>first</title>")
 

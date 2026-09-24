@@ -22,7 +22,7 @@ keeps going and picks music that matches the taste of whoever is currently onlin
 - **Local accounts** with username and password, plus optional login through GitHub, Twitter or
   Facebook
 - **REST API** for your own clients, see the [API reference](jukebox/jukebox_core/docs/API.rst)
-- **RSS feed** of the next song at `/feed/`
+- **RSS feed** of the next song at `/feed/` (needs a login)
 - English and German interface
 
 <p>

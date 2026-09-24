@@ -1,3 +1,4 @@
+from django.contrib.auth.decorators import login_required
 from django.urls import path
 
 from . import views
@@ -40,5 +41,6 @@ urlpatterns = [
         name="jukebox_api_queue_item",
     ),
     path("api/v1/ping", views.ping.as_view(), name="jukebox_api_ping"),
-    path("feed/", QueueFeed(), name="jukebox_feed"),
+    # the queue is only for people with an account
+    path("feed/", login_required(QueueFeed()), name="jukebox_feed"),
 ]
