@@ -46,7 +46,7 @@ DATABASES = {
 }
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
-TIME_ZONE = "Europe/Berlin"
+TIME_ZONE = os.environ.get("JUKEBOX_TIME_ZONE", "Europe/Berlin")
 USE_TZ = True
 LANGUAGE_CODE = "en-us"
 LANGUAGES = [

@@ -1,0 +1,20 @@
+services:
+  jukebox:
+    build: .
+    image: jukebox:latest
+    restart: unless-stopped
+    ports:
+      - "${JUKEBOX_PORT:-8000}:8000"
+    environment:
+      # host names / IPs used to open the jukebox, e.g. "192.168.1.4,jukebox.local"
+      JUKEBOX_ALLOWED_HOSTS: "${JUKEBOX_ALLOWED_HOSTS:-localhost,127.0.0.1}"
+      JUKEBOX_DEFAULT_THEME: "${JUKEBOX_DEFAULT_THEME:-dark}"
+      JUKEBOX_TIME_ZONE: "${JUKEBOX_TIME_ZONE:-Europe/Berlin}"
+    volumes:
+      # database, secret key and settings_local.py
+      - jukebox-data:/data
+      # your music library, read only
+      - "${MUSIC_DIR:-./music}:/music:ro"
+
+volumes:
+  jukebox-data:
