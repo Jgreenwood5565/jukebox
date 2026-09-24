@@ -49,9 +49,10 @@ jukebox jukebox_index --path=/path/to/your/music  # add your library
 jukebox runserver 0.0.0.0:8000
 ```
 
-Open `http://<your host>:8000`, log in and start voting. Create an account for everyone else with
-`jukebox jukebox_adduser <username>`, or turn on social login so people can sign in with an existing
-account.
+Open `http://<your host>:8000`, log in and start voting. As an admin, add everyone else under
+**Manage users** in the account menu, where you can also reset passwords, make someone an admin or
+disable an account. `jukebox jukebox_adduser <username>` does the same from the command line, or turn
+on social login so people can sign in with an existing account.
 
 ![Login page in dark mode](docs/screenshots/login-dark.png)
 

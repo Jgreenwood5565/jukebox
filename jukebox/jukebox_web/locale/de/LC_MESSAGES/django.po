@@ -179,3 +179,88 @@ msgstr "Suchoptionen"
 
 msgid "Vote to skip"
 msgstr "Für Überspringen stimmen"
+
+msgid "Manage users"
+msgstr "Benutzer verwalten"
+
+msgid "Users"
+msgstr "Benutzer"
+
+msgid "Back to the jukebox"
+msgstr "Zurück zur Jukebox"
+
+msgid "Add user"
+msgstr "Benutzer hinzufügen"
+
+msgid "You"
+msgstr "Du"
+
+msgid "Admin"
+msgstr "Admin"
+
+msgid "Disabled"
+msgstr "Deaktiviert"
+
+#, python-format
+msgid "%(when)s ago"
+msgstr "vor %(when)s"
+
+msgid "Never logged in"
+msgstr "Noch nie angemeldet"
+
+msgid "Account"
+msgstr "Konto"
+
+msgid "Save"
+msgstr "Speichern"
+
+msgid "Set password"
+msgstr "Passwort setzen"
+
+msgid "Delete user"
+msgstr "Benutzer löschen"
+
+#, python-format
+msgid "Delete %(name)s with their favourites and votes"
+msgstr "%(name)s samt Favoriten und Stimmen löschen"
+
+msgid "Delete"
+msgstr "Löschen"
+
+msgid "Name"
+msgstr "Name"
+
+msgid "Administrator"
+msgstr "Administrator"
+
+msgid "Can manage users and skip songs right away"
+msgstr "Kann Benutzer verwalten und Songs sofort überspringen"
+
+msgid "Account enabled"
+msgstr "Konto aktiv"
+
+msgid "Disabled accounts can't log in"
+msgstr "Deaktivierte Konten können sich nicht anmelden"
+
+#, python-format
+msgid "Added %(username)s."
+msgstr "%(username)s hinzugefügt."
+
+#, python-format
+msgid "Saved %(username)s."
+msgstr "%(username)s gespeichert."
+
+msgid "You can't remove your own admin rights or disable yourself."
+msgstr ""
+"Du kannst dir nicht selbst die Admin-Rechte entziehen oder dich deaktivieren."
+
+#, python-format
+msgid "Changed the password of %(username)s."
+msgstr "Passwort von %(username)s geändert."
+
+msgid "You can't delete yourself."
+msgstr "Du kannst dich nicht selbst löschen."
+
+#, python-format
+msgid "Deleted %(username)s."
+msgstr "%(username)s gelöscht."

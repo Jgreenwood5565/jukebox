@@ -1,0 +1,21 @@
+{% for error in form.non_field_errors %}
+    <p class="formError">{{ error }}</p>
+{% endfor %}
+{% for field in form %}
+    {% if field.is_hidden %}
+        {{ field }}
+    {% elif field.field.widget.input_type == 'checkbox' %}
+        <div class="field checkbox{% if field.errors %} invalid{% endif %}">
+            <label>{{ field }} <span>{{ field.label }}</span></label>
+            {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        </div>
+    {% else %}
+        <div class="field{% if field.errors %} invalid{% endif %}">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<p class="formError">{{ error }}</p>{% endfor %}
+            {# Django's own password rules, as markup #}
+            {% if field.help_text %}<div class="help">{{ field.help_text|safe }}</div>{% endif %}
+        </div>
+    {% endif %}
+{% endfor %}

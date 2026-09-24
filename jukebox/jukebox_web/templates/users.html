@@ -1,0 +1,115 @@
+{% load i18n static %}<!DOCTYPE html>
+{% get_current_language as LANGUAGE_CODE %}
+<html lang="{{ LANGUAGE_CODE }}" data-theme="{{ theme }}">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="theme-color" content="{% if theme == 'light' %}#F6F7F9{% else %}#0B0C10{% endif %}"/>
+        <title>{% trans 'Users' %} · jukebox</title>
+        <link rel="shortcut icon" href="{% static 'img/favicon.ico' %}" type="image/x-icon"/>
+        <link type="text/css" rel="stylesheet" href="{% static 'css/music.css' %}" />
+    </head>
+    <body class="managePage">
+        <header class="manageHeader">
+            <a class="brand" href="{% url 'jukebox_web_index' %}">
+                {% include "logo.svg" %}
+                <span>jukebox</span>
+            </a>
+            <a class="backLink" href="{% url 'jukebox_web_index' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+                {% trans 'Back to the jukebox' %}
+            </a>
+        </header>
+
+        <main class="manageMain">
+            <h1>{% trans 'Users' %}</h1>
+
+            {% for message in messages %}
+                <p class="notice {{ message.tags }}" role="status">{{ message }}</p>
+            {% endfor %}
+
+            <section class="panel">
+                <details class="addUser"{% if add_form.errors %} open{% endif %}>
+                    <summary>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                        {% trans 'Add user' %}
+                    </summary>
+                    <form method="post" action="{% url 'jukebox_web_users' %}" class="manageForm" novalidate>
+                        {% csrf_token %}
+                        {% include "form_fields.html" with form=add_form %}
+                        <div class="actions">
+                            <button type="submit" class="button">{% trans 'Add user' %}</button>
+                        </div>
+                    </form>
+                </details>
+            </section>
+
+            <section class="panel userList">
+                {% for row in rows %}
+                    {% with account=row.user %}
+                        <details class="userRow"{% if row.open %} open{% endif %}>
+                            <summary>
+                                <span class="avatar" aria-hidden="true">{{ account.get_full_name|default:account.username|first|upper }}</span>
+                                <span class="who">
+                                    <strong>{{ account.get_full_name|default:account.username }}</strong>
+                                    {% if account.get_full_name %}<span>{{ account.username }}</span>{% endif %}
+                                </span>
+                                <span class="badges">
+                                    {% if account == user %}<span class="badge">{% trans 'You' %}</span>{% endif %}
+                                    {% if account.is_staff %}<span class="badge accent">{% trans 'Admin' %}</span>{% endif %}
+                                    {% if not account.is_active %}<span class="badge muted">{% trans 'Disabled' %}</span>{% endif %}
+                                </span>
+                                <span class="lastLogin">
+                                    {% if account.last_login %}
+                                        {% blocktrans with when=account.last_login|timesince %}{{ when }} ago{% endblocktrans %}
+                                    {% else %}
+                                        {% trans 'Never logged in' %}
+                                    {% endif %}
+                                </span>
+                                <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                            </summary>
+
+                            <div class="userPanel">
+                                <form method="post" action="{% url 'jukebox_web_user_edit' account.id %}" class="manageForm">
+                                    {% csrf_token %}
+                                    <h2>{% trans 'Account' %}</h2>
+                                    {% include "form_fields.html" with form=row.edit_form %}
+                                    <div class="actions">
+                                        <button type="submit" class="button">{% trans 'Save' %}</button>
+                                    </div>
+                                </form>
+
+                                <form method="post" action="{% url 'jukebox_web_user_password' account.id %}" class="manageForm" novalidate>
+                                    {% csrf_token %}
+                                    {# tells password managers whose password this is #}
+                                    <input type="text" name="username" value="{{ account.username }}" autocomplete="username" hidden />
+                                    <h2>{% trans 'Set password' %}</h2>
+                                    {% include "form_fields.html" with form=row.password_form %}
+                                    <div class="actions">
+                                        <button type="submit" class="button secondary">{% trans 'Set password' %}</button>
+                                    </div>
+                                </form>
+
+                                {% if account != user %}
+                                    <form method="post" action="{% url 'jukebox_web_user_delete' account.id %}" class="manageForm danger">
+                                        {% csrf_token %}
+                                        <h2>{% trans 'Delete user' %}</h2>
+                                        <div class="field checkbox">
+                                            <label>
+                                                <input type="checkbox" required />
+                                                <span>{% blocktrans with name=account.username %}Delete {{ name }} with their favourites and votes{% endblocktrans %}</span>
+                                            </label>
+                                        </div>
+                                        <div class="actions">
+                                            <button type="submit" class="button dangerButton">{% trans 'Delete' %}</button>
+                                        </div>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </details>
+                    {% endwith %}
+                {% endfor %}
+            </section>
+        </main>
+    </body>
+</html>

@@ -35,6 +35,8 @@ v0.6.0, unreleased -- Web player
     - FLAC and other non-MP3 files stream as 192 kbit/s MP3 converted by ffmpeg
     - Cover art from the files' tags or a cover.jpg next to them
     - Vote to skip: a song is skipped once most listeners vote, admins skip at once
+    - Admins manage accounts in the web interface: add users, set passwords,
+      grant admin rights, disable and delete accounts
     - Ready for the internet: failed logins are limited for the admin and API
       basic auth too, real client addresses behind a trusted proxy, secure
       cookies for HTTPS, password rules and a Content-Security-Policy

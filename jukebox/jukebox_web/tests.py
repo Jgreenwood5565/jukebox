@@ -139,3 +139,98 @@ class WebTest(TestCase):
         response = self.client.get("/feed/")
         self.assertContains(response, "<title>popular</title>")
         self.assertNotContains(response, "<title>first</title>")
+
+
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class UserManagementTest(TestCase):
+    password = "correct horse battery"
+
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="pw", is_staff=True)
+        self.listener = User.objects.create_user("listener", password="pw")
+        self.client.force_login(self.admin)
+
+    def testOnlyAdmins(self):
+        client = self.client_class()
+        self.assertRedirects(
+            client.get("/users"), "/login?next=/users", fetch_redirect_response=False
+        )
+        client.force_login(self.listener)
+        self.assertEqual(client.get("/users").status_code, 403)
+        self.assertEqual(client.post(f"/users/{self.admin.id}/delete").status_code, 403)
+        self.assertTrue(User.objects.filter(id=self.admin.id).exists())
+        self.assertNotContains(client.get("/"), "Manage users")
+
+    def testList(self):
+        response = self.client.get("/users")
+        self.assertContains(response, "listener")
+        self.assertContains(self.client.get("/"), 'href="/users"')
+
+    def testAddUser(self):
+        response = self.client.post(
+            "/users",
+            {
+                "add-username": "newbie",
+                "add-name": "New Bie",
+                "add-password1": self.password,
+                "add-password2": self.password,
+                "add-is_staff": "on",
+            },
+        )
+        self.assertRedirects(response, "/users")
+        user = User.objects.get(username="newbie")
+        self.assertEqual(user.get_full_name(), "New Bie")
+        self.assertTrue(user.is_staff and user.is_superuser)
+        self.assertTrue(user.check_password(self.password))
+
+    def testAddUserChecksPasswords(self):
+        response = self.client.post(
+            "/users",
+            {"add-username": "newbie", "add-password1": "short", "add-password2": "short"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "too short", status_code=400)
+        self.assertFalse(User.objects.filter(username="newbie").exists())
+
+    def testEdit(self):
+        response = self.client.post(
+            f"/users/{self.listener.id}",
+            {f"user{self.listener.id}-name": "Lis Tener", f"user{self.listener.id}-is_staff": "on"},
+        )
+        self.assertRedirects(response, "/users")
+        self.listener.refresh_from_db()
+        self.assertEqual(self.listener.get_full_name(), "Lis Tener")
+        self.assertTrue(self.listener.is_staff)
+        # an unchecked box disables the account
+        self.assertFalse(self.listener.is_active)
+
+    def testCantLockYourselfOut(self):
+        prefix = f"user{self.admin.id}"
+        self.client.post(f"/users/{self.admin.id}", {f"{prefix}-is_active": "on"})
+        self.client.post(f"/users/{self.admin.id}", {f"{prefix}-is_staff": "on"})
+        self.client.post(f"/users/{self.admin.id}/delete")
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_staff and self.admin.is_active)
+
+    def testSetPassword(self):
+        prefix = f"password{self.listener.id}"
+        response = self.client.post(
+            f"/users/{self.listener.id}/password",
+            {f"{prefix}-new_password1": self.password, f"{prefix}-new_password2": self.password},
+        )
+        self.assertRedirects(response, "/users")
+        self.listener.refresh_from_db()
+        self.assertTrue(self.listener.check_password(self.password))
+
+    def testSetOwnPasswordKeepsYouLoggedIn(self):
+        prefix = f"password{self.admin.id}"
+        self.client.post(
+            f"/users/{self.admin.id}/password",
+            {f"{prefix}-new_password1": self.password, f"{prefix}-new_password2": self.password},
+        )
+        self.assertEqual(self.client.get("/users").status_code, 200)
+
+    def testDelete(self):
+        self.assertRedirects(self.client.post(f"/users/{self.listener.id}/delete"), "/users")
+        self.assertFalse(User.objects.filter(id=self.listener.id).exists())
+        self.assertEqual(self.client.get(f"/users/{self.listener.id}/delete").status_code, 405)

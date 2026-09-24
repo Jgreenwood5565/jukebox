@@ -207,10 +207,15 @@
                     <a href="{% url 'jukebox_web_theme' 'light' %}">{% trans 'Light' %}</a>
                 </li>
             </ul>
-            <form action="{% url 'jukebox_web_logout' %}" method="post">
-                {% csrf_token %}
-                <button type="submit" class="linkbutton">{% trans 'Logout' %}</button>
-            </form>
+            <div class="menuFooter">
+                {% if user.is_staff %}
+                    <a href="{% url 'jukebox_web_users' %}">{% trans 'Manage users' %}</a>
+                {% endif %}
+                <form action="{% url 'jukebox_web_logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="linkbutton">{% trans 'Logout' %}</button>
+                </form>
+            </div>
         </div>
 
         <div id="csrf_token">
