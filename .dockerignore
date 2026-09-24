@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+venv
+build
+dist
+docs
+*.egg-info
+**/__pycache__
+**/*.py[cod]
+*.sqlite
+*.sqlite3
+.env
+music

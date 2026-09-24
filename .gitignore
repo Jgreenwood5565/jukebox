@@ -12,3 +12,4 @@ __pycache__/
 *.pid
 *.sw*
 jukebox/settings_local.py
+.env

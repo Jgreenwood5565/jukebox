@@ -26,3 +26,18 @@ jobs:
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t jukebox:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name jukebox -p 8000:8000 jukebox:ci
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8000/login && exit 0
+            sleep 2
+          done
+          docker logs jukebox
+          exit 1

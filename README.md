@@ -48,6 +48,30 @@ account.
 
 ![Login page in dark mode](docs/screenshots/login-dark.png)
 
+## Docker and Raspberry Pi
+
+The repository includes a `Dockerfile` and `docker-compose.yml`. The image runs on regular PCs
+(amd64) and on a Raspberry Pi 3, 4 or 5 with a **64-bit** OS (arm64). On the Pi:
+
+```sh
+# install Docker (skip if it is already installed), then log out and back in
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+git clone https://github.com/Jgreenwood5565/jukebox.git
+cd jukebox
+cp .env.example .env        # set the Pi's IP address and your music folder
+docker compose up -d --build
+
+docker compose exec jukebox jukebox jukebox_adduser yourname --admin
+docker compose exec jukebox jukebox jukebox_index --path=/music
+```
+
+Then open `http://<pi ip>:8000`. The database and secret key are stored in the `jukebox-data`
+volume. The music folder is mounted read-only, and the container runs as user id 1000, which is the
+default `pi` user, so the files need to be readable by that user. To update, run `git pull` and then
+`docker compose up -d --build`; migrations run automatically on start.
+
 ## Configuration
 
 Everything is stored in `~/.jukebox`: the SQLite database, the generated secret key and
