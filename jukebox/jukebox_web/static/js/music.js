@@ -5,7 +5,6 @@
 
     const PAGE_SIZE = 30;
     const PING_INTERVAL = 60000;
-    const STATIC_URL = document.body.dataset.staticUrl || "/static/";
 
     const HTML_ESCAPES = {
         "&": "&amp;",
@@ -22,13 +21,25 @@
             .replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
     }
 
-    function image(name) {
-        return STATIC_URL + "img/" + name;
+    const ICONS = {
+        vote: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg>",
+        favourite: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 20.5s-8-4.7-8-10.6" +
+            "A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 8 2.6c0 5.9-8 10.6-8 10.6z\"/></svg>",
+        empty: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 18V5l12-2v13\"/>" +
+            "<circle cx=\"6\" cy=\"18\" r=\"3\"/><circle cx=\"18\" cy=\"16\" r=\"3\"/></svg>"
+    };
+
+    // round button toggling a vote or favourite, "active" when set
+    function toggleButton(kind, id, active, label) {
+        return "<button type=\"button\" class=\"toggle " + kind + (active ? " active" : "") +
+            "\" data-id=\"" + escapeHtml(id) + "\" aria-pressed=\"" + active + "\" title=\"" +
+            escapeHtml(label) + "\" aria-label=\"" + escapeHtml(label) + "\">" + ICONS[kind] +
+            "</button>";
     }
 
-    function icon(file, cls, id, label) {
-        return "<img src=\"" + image(file) + "\" class=\"" + cls + "\" data-id=\"" + escapeHtml(id) +
-            "\" alt=\"" + escapeHtml(label) + "\" title=\"" + escapeHtml(label) + "\" />";
+    function setToggle(items, active, label) {
+        items.toggleClass("active", active)
+            .attr({"aria-pressed": String(active), "title": label, "aria-label": label});
     }
 
     function emptyCell() {
@@ -39,47 +50,55 @@
         if (value === null || value === undefined) {
             return emptyCell();
         }
-        return "<td class=\"filter " + cls + "\" data-value=\"" + escapeHtml(value) + "\">" +
-            escapeHtml(label) + "</td>";
+        return "<td class=\"filter " + cls + "\" data-value=\"" + escapeHtml(value) + "\" title=\"" +
+            escapeHtml(label) + "\">" + escapeHtml(label) + "</td>";
     }
 
     function formatLength(length) {
         if (length === null || length === undefined) {
             return "";
         }
+        length = Math.max(Math.floor(length), 0);
         const seconds = length % 60;
         return Math.floor(length / 60) + ":" + (seconds < 10 ? "0" : "") + seconds;
     }
 
+    function votePill(item) {
+        if (item.votes === 0) {
+            return "<span class=\"votePill autoplay\">" + escapeHtml(gettext("Autoplay")) + "</span>";
+        }
+        return "<span class=\"votePill\">" + ICONS.vote + "<span class=\"count\">" +
+            escapeHtml(item.votes) + "</span></span>";
+    }
+
     const cells = {
-        title: (item) => filterCell("search_title", item.title, item.title),
+        // small screens drop the artist column and show it below the title
+        title: (item) => "<td class=\"filter search_title\" data-value=\"" + escapeHtml(item.title) +
+            "\" title=\"" + escapeHtml(item.title) + "\"><span class=\"primary\">" +
+            escapeHtml(item.title) + "</span><span class=\"subline\">" +
+            escapeHtml(item.artist.name) + "</span></td>",
         artist: (item) => filterCell("filter_artist", item.artist.id, item.artist.name),
         album: (item) => filterCell("filter_album", item.album.id, item.album.title),
         genre: (item) => filterCell("filter_genre", item.genre.id, item.genre.name),
         year: (item) => filterCell("filter_year", item.year, item.year),
-        length: (item) => "<td>" + escapeHtml(formatLength(item.length)) + "</td>",
-        created: (item) => "<td>" + escapeHtml(item.created) + "</td>",
+        length: (item) => "<td class=\"muted\">" + escapeHtml(formatLength(item.length)) + "</td>",
+        created: (item) => "<td class=\"muted\">" + escapeHtml(item.created) + "</td>",
         votes: (item) => {
             let html = "<td class=\"voteCount\">";
-            if (item.votes > 0) {
-                if (item.users.length === item.votes) {
-                    html += "<div class=\"voteTooltip\"><ul>";
-                    item.users.forEach((user) => {
-                        html += "<li>" + escapeHtml(user.name) + "</li>";
-                    });
-                    html += "</ul></div>";
-                }
-                html += "<span class=\"count\">" + escapeHtml(item.votes) + "</span>";
+            if (item.votes > 0 && item.users.length === item.votes) {
+                html += "<div class=\"voteTooltip\"><ul>";
+                item.users.forEach((user) => {
+                    html += "<li>" + escapeHtml(user.name) + "</li>";
+                });
+                html += "</ul></div>";
             }
-            else {
-                html += escapeHtml(gettext("Autoplay"));
-            }
-            return html + "</td>";
+            return html + votePill(item) + "</td>";
         }
     };
 
-    function column(label, cls, sort, cell) {
-        return {label: label, cls: cls, sort: sort, cell: cell};
+    // "hide" names the screen size below which the column is left out
+    function column(label, cls, sort, cell, hide) {
+        return {label: label, cls: cls, sort: sort, cell: cell, hide: hide || null};
     }
 
     // columns shown for each list type returned by the API
@@ -89,10 +108,10 @@
             voteLabel: gettext("Support vote"),
             columns: [
                 column(gettext("Title"), "favourite_title", "title", cells.title),
-                column(gettext("Artist"), "favourite_artist", "artist", cells.artist),
-                column(gettext("Album"), "favourite_album", "album", cells.album),
+                column(gettext("Artist"), "favourite_artist", "artist", cells.artist, "md"),
+                column(gettext("Album"), "favourite_album", "album", cells.album, "md"),
                 column(gettext("Votes"), "favourite_genre", "votes", cells.votes),
-                column(gettext("First voted"), "favourite_added", "created", cells.created)
+                column(gettext("First voted"), "favourite_added", "created", cells.created, "lg")
             ]
         },
         "history": {
@@ -100,10 +119,10 @@
             voteLabel: gettext("Vote to play"),
             columns: [
                 column(gettext("Title"), "favourite_title", "title", cells.title),
-                column(gettext("Artist"), "favourite_artist", "artist", cells.artist),
-                column(gettext("Album"), "favourite_album", "album", cells.album),
-                column(gettext("Votes"), "favourite_genre", null, cells.votes),
-                column(gettext("Date added"), "favourite_added", "created", cells.created)
+                column(gettext("Artist"), "favourite_artist", "artist", cells.artist, "md"),
+                column(gettext("Album"), "favourite_album", "album", cells.album, "md"),
+                column(gettext("Votes"), "favourite_genre", null, cells.votes, "md"),
+                column(gettext("Date added"), "favourite_added", "created", cells.created, "lg")
             ]
         },
         "favourites": {
@@ -112,10 +131,10 @@
             alwaysFavourite: true,
             columns: [
                 column(gettext("Title"), "favourite_title", "title", cells.title),
-                column(gettext("Artist"), "favourite_artist", "artist", cells.artist),
-                column(gettext("Album"), "favourite_album", "album", cells.album),
-                column(gettext("Genre"), "favourite_genre", "genre", cells.genre),
-                column(gettext("Date added"), "favourite_added", "created", cells.created)
+                column(gettext("Artist"), "favourite_artist", "artist", cells.artist, "md"),
+                column(gettext("Album"), "favourite_album", "album", cells.album, "md"),
+                column(gettext("Genre"), "favourite_genre", "genre", cells.genre, "md"),
+                column(gettext("Date added"), "favourite_added", "created", cells.created, "lg")
             ]
         },
         "songs": {
@@ -123,11 +142,11 @@
             voteLabel: gettext("Vote to play"),
             columns: [
                 column(gettext("Title"), "song_title", "title", cells.title),
-                column(gettext("Artist"), "song_artist", "artist", cells.artist),
-                column(gettext("Album"), "song_album", "album", cells.album),
-                column(gettext("Genre"), "song_genre", "genre", cells.genre),
-                column(gettext("Year"), "song_year", "year", cells.year),
-                column(gettext("Length"), "song_length", "length", cells.length)
+                column(gettext("Artist"), "song_artist", "artist", cells.artist, "md"),
+                column(gettext("Album"), "song_album", "album", cells.album, "md"),
+                column(gettext("Genre"), "song_genre", "genre", cells.genre, "lg"),
+                column(gettext("Year"), "song_year", "year", cells.year, "md"),
+                column(gettext("Length"), "song_length", "length", cells.length, "md")
             ]
         },
         "artists": {
@@ -334,9 +353,18 @@
             $("#listen")
                 .toggleClass("playing", Player.listening)
                 .attr({"aria-pressed": String(Player.listening), "title": label, "aria-label": label});
-            $("#volume").toggle(Player.listening);
+            $("#nowPlaying").toggleClass("listening", Player.listening);
         }
     };
+
+    // a stable color per artist for the cover placeholder
+    function hue(text) {
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            hash = (hash * 31 + text.charCodeAt(i)) % 360;
+        }
+        return hash;
+    }
 
     const Music = {
         url: null,
@@ -346,7 +374,9 @@
         generation: 0,
         options: {},
         searchOptions: {},
-        remaining: 0,
+        // server clock of the current song, advanced every second
+        position: 0,
+        length: 0,
         currentSongTimer: null,
 
         init: function () {
@@ -382,14 +412,14 @@
             Player.init();
             Music.getCurrentSong();
             Music.ping();
-            Music.loadList("/api/v1/queue");
             Music.setActiveMenu($("#sidebar a.loadQueue"));
+            Music.loadList("/api/v1/queue");
         },
 
         showSongs: function (options) {
             Music.options = options;
-            Music.loadList("/api/v1/songs");
             Music.setActiveMenu($("#sidebar a.loadSongs"));
+            Music.loadList("/api/v1/songs");
         },
 
         initSearch: function () {
@@ -397,25 +427,13 @@
                 Music.showSongs({"search_term": $("input.searchterm").val()});
                 return false;
             });
-            $("#searchform span.searchsubmit").on("click", () => {
-                $("#searchform").trigger("submit");
-                return false;
-            });
 
-            const submitDetails = () => {
+            $("#searchdetailsform").on("submit", () => {
                 Music.showSongs(Music.getSearchOptions());
                 Music.toggleSearchDetails(false);
                 return false;
-            };
-            $("#searchdetailsform").on("submit", submitDetails);
-            $("#searchdetailsform span.searchsubmit").on("click", submitDetails);
-            // not every browser submits a form without visible submit button
-            $("#search_title, #search_artist, #search_album").on("keydown", (event) => {
-                if (event.key === "Enter") {
-                    return submitDetails();
-                }
             });
-            $("#searchdetailsform span.searchreset").on("click", () => {
+            $("#searchdetailsform .searchreset").on("click", () => {
                 Music.resetSearchDetails();
                 return false;
             });
@@ -453,6 +471,7 @@
             }
 
             $("#searchdetails").show();
+            $("#search_title").trigger("focus");
             $(document).on("click.search", (event) => {
                 if ($(event.target).closest("#searchdetails, #searchoptions").length === 0) {
                     Music.toggleSearchDetails(false);
@@ -479,6 +498,14 @@
                         $("#accountoptions").hide();
                     }
                 });
+            });
+
+            $(document).on("keydown", (event) => {
+                if (event.key === "Escape") {
+                    Music.toggleSearchDetails(false);
+                    $(document).off("click.account");
+                    $("#accountoptions").hide();
+                }
             });
         },
 
@@ -512,88 +539,79 @@
                 return false;
             });
 
-            main.on("click", "table.list img.queue_add", function () {
+            main.on("click", "table.list button.vote:not(.active)", function () {
                 $.ajax({
                     url: "/api/v1/queue",
                     type: "POST",
                     data: {"id": $(this).attr("data-id")}
                 }).done((data) => {
-                    const items = $("img.queue_add[data-id=\"" + data.id + "\"]");
-                    Music.setIcon(items, "queue_active.png", "queue_add", "queue_remove",
-                        gettext("Revoke vote"));
+                    const items = $("button.vote[data-id=\"" + data.id + "\"]");
+                    setToggle(items, true, gettext("Revoke vote"));
                     items.closest("tr").find(".voteCount .count").text(data.count);
                 });
                 return false;
             });
 
-            main.on("click", "table.list img.queue_remove", function () {
+            main.on("click", "table.list button.vote.active", function () {
                 const inQueue = $(this).closest("tr.row_queue").length > 0;
                 $.ajax({
                     url: "/api/v1/queue/" + encodeURIComponent($(this).attr("data-id")),
                     type: "DELETE"
                 }).done((data) => {
-                    const items = $("img.queue_remove[data-id=\"" + data.id + "\"]");
+                    const items = $("button.vote[data-id=\"" + data.id + "\"]");
                     if (inQueue && data.count === 0) {
-                        items.closest("tr").fadeOut(1000, function () {
+                        items.closest("tr").fadeOut(400, function () {
                             $(this).remove();
                         });
                         return;
                     }
-                    Music.setIcon(items, "queue.png", "queue_remove", "queue_add",
+                    setToggle(items, false,
                         inQueue ? gettext("Support vote") : gettext("Vote to play"));
                     items.closest("tr").find(".voteCount .count").text(data.count);
                 });
                 return false;
             });
 
-            main.on("click", "table.list img.favourite_add", function () {
+            main.on("click", "table.list button.favourite:not(.active)", function () {
                 $.ajax({
                     url: "/api/v1/favourites",
                     type: "POST",
                     data: {"id": $(this).attr("data-id")}
                 }).done((data) => {
-                    Music.setIcon($("img.favourite_add[data-id=\"" + data.id + "\"]"),
-                        "favourite_active.png", "favourite_add", "favourite_remove",
+                    setToggle($("button.favourite[data-id=\"" + data.id + "\"]"), true,
                         gettext("Remove from favourites"));
                 });
                 return false;
             });
 
-            main.on("click", "table.list img.favourite_remove", function () {
+            main.on("click", "table.list button.favourite.active", function () {
                 const inFavourites = $(this).closest("tr.row_favourites").length > 0;
                 $.ajax({
                     url: "/api/v1/favourites/" + encodeURIComponent($(this).attr("data-id")),
                     type: "DELETE"
                 }).done((data) => {
-                    const items = $("img.favourite_remove[data-id=\"" + data.id + "\"]");
+                    const items = $("button.favourite[data-id=\"" + data.id + "\"]");
                     if (inFavourites) {
-                        items.closest("tr").fadeOut(1000, function () {
+                        items.closest("tr").fadeOut(400, function () {
                             $(this).remove();
                         });
                         return;
                     }
-                    Music.setIcon(items, "favourite.png", "favourite_remove", "favourite_add",
-                        gettext("Add to favourites"));
+                    setToggle(items, false, gettext("Add to favourites"));
                 });
                 return false;
             });
 
             main.on("mouseenter", "td.voteCount", function () {
-                const offset = $(this).offset();
+                const rect = this.getBoundingClientRect();
                 $(this).find("div.voteTooltip").css({
-                    left: offset.left - $(window).scrollLeft() + 50,
-                    top: offset.top - $(window).scrollTop() + 10
+                    left: rect.left,
+                    top: rect.bottom + 4
                 }).show();
             });
             main.on("mouseleave", "td.voteCount", function () {
                 $(this).find("div.voteTooltip").hide();
             });
-        },
-
-        setIcon: function (items, file, removeClass, addClass, label) {
-            items.attr({src: image(file), alt: label, title: label})
-                .removeClass(removeClass)
-                .addClass(addClass);
         },
 
         ping: function () {
@@ -606,14 +624,13 @@
             clearTimeout(Music.currentSongTimer);
             $.ajax({url: "/api/v1/songs/current"}).done((data) => {
                 Player.receive(data);
+                Music.showCurrentSong(data);
                 if ("id" in data) {
-                    $("#currentSong strong").show();
-                    $("#currentSong span.songTitle").text(data.artist.name + " - " + data.title);
-                    Music.remaining = data.remaining;
-                    Music.updateTimeLeft();
+                    Music.position = data.position;
+                    Music.length = data.length;
+                    Music.tick();
                 }
                 else {
-                    $("#currentSong strong").hide();
                     Music.currentSongTimer = setTimeout(Music.getCurrentSong, 10000);
                 }
             }).fail(() => {
@@ -621,19 +638,42 @@
             });
         },
 
-        updateTimeLeft: function () {
-            const element = $("#currentSong span.timeRemaining");
-            if (Music.remaining <= 0) {
-                // song is over, poll quickly until the player picked the next one
-                element.hide();
-                Music.currentSongTimer = setTimeout(
-                    Music.getCurrentSong, Music.remaining > -30 ? 2000 : 10000);
+        showCurrentSong: function (data) {
+            const bar = $("#nowPlaying");
+            const playing = "id" in data;
+            bar.toggleClass("idle", !playing);
+            if (!playing) {
+                bar.find(".songTitle").text(gettext("Nothing is playing yet"));
+                bar.find(".songArtist, .npVotes, .cover span").text("");
+                bar.find(".elapsed, .duration").text(formatLength(0));
+                bar.find(".fill").css("width", 0);
                 return;
             }
 
-            element.text("(" + formatLength(Music.remaining) + ")").show();
-            Music.remaining--;
-            Music.currentSongTimer = setTimeout(Music.updateTimeLeft, 1000);
+            const artist = data.artist.name || "";
+            bar.find(".songTitle").text(data.title).attr("title", data.title);
+            bar.find(".songArtist").text(data.album.title ? artist + " · " + data.album.title : artist);
+            bar.find(".cover").css("--hue", hue(artist)).find("span").text(artist.charAt(0).toUpperCase());
+            bar.find(".npVotes").html(votePill(data))
+                .attr("title", data.users.map((user) => user.name).join(", "));
+        },
+
+        // advance the progress with the server clock, ask for the next song once it's over
+        tick: function () {
+            const remaining = Music.length - Music.position;
+            if (remaining <= 0) {
+                // poll quickly until the next song is picked
+                Music.currentSongTimer = setTimeout(
+                    Music.getCurrentSong, remaining > -30 ? 2000 : 10000);
+                return;
+            }
+
+            const progress = Math.min(Music.position / Music.length * 100, 100) + "%";
+            $("#nowPlaying .fill").css("width", progress);
+            $("#nowPlaying .elapsed").text(formatLength(Music.position));
+            $("#nowPlaying .duration").text(formatLength(Music.length));
+            Music.position++;
+            Music.currentSongTimer = setTimeout(Music.tick, 1000);
         },
 
         getSearchOptions: function () {
@@ -659,6 +699,15 @@
             item.closest("li").addClass("active");
         },
 
+        renderHeader: function (terms) {
+            const title = $("#sidebar li.active .label").text();
+            let html = "<div class=\"listHeader\"><h1>" + escapeHtml(title) + "</h1>";
+            if (terms) {
+                html += "<span class=\"searchSummary\">" + escapeHtml(terms) + "</span>";
+            }
+            return html + "</div>";
+        },
+
         loadList: function (url) {
             const generation = ++Music.generation;
             Music.url = url;
@@ -677,16 +726,6 @@
                 }
                 $(window).scrollTop(0);
 
-                Music.hasNextPage = data.hasNextPage;
-                if (data.itemList.length > 0) {
-                    $("#main").html(Music.renderTable(data));
-                    $("#main table.list tbody").append(Music.renderData(data));
-                }
-                else {
-                    $("#main").html(
-                        "<div class=\"noContent\">" + escapeHtml(gettext("No data found")) + "</div>");
-                }
-
                 // set search term - don't iterate to get correct order
                 Music.searchOptions = data.search;
                 const terms = [];
@@ -699,6 +738,18 @@
                     terms.push(data.search.term);
                 }
                 $("input.searchterm").val(terms.join(" "));
+
+                Music.hasNextPage = data.hasNextPage;
+                let html = Music.renderHeader(terms.join(" "));
+                if (data.itemList.length > 0) {
+                    html += Music.renderTable(data);
+                }
+                else {
+                    html += "<div class=\"noContent\">" + ICONS.empty +
+                        escapeHtml(gettext("No data found")) + "</div>";
+                }
+                $("#main").html(html);
+                $("#main table.list tbody").append(Music.renderData(data));
             }).always(() => {
                 if (generation === Music.generation) {
                     Music.loading = false;
@@ -743,6 +794,10 @@
             return "";
         },
 
+        hideAttribute: function (col) {
+            return col.hide ? " data-hide=\"" + col.hide + "\"" : "";
+        },
+
         renderTable: function (data) {
             const list = LISTS[data.type];
             let html = "<table class=\"list\"><thead><tr>";
@@ -752,10 +807,11 @@
             list.columns.forEach((col) => {
                 if (col.sort) {
                     html += "<th class=\"" + col.cls + " sort_" + col.sort +
-                        Music.getOrderClass(col.sort, data) + "\" data-sort=\"" + col.sort + "\">";
+                        Music.getOrderClass(col.sort, data) + "\" data-sort=\"" + col.sort + "\"" +
+                        Music.hideAttribute(col) + ">";
                 }
                 else {
-                    html += "<th class=\"" + col.cls + "\">";
+                    html += "<th class=\"" + col.cls + "\"" + Music.hideAttribute(col) + ">";
                 }
                 html += escapeHtml(col.label) + "</th>";
             });
@@ -768,19 +824,18 @@
             data.itemList.forEach((item) => {
                 html += "<tr class=\"" + list.rowClass + "\">";
                 if (list.voteLabel) {
-                    html += "<td>";
+                    html += "<td class=\"actions\">";
                     html += item.queued
-                        ? icon("queue_active.png", "queue_remove", item.id, gettext("Revoke vote"))
-                        : icon("queue.png", "queue_add", item.id, list.voteLabel);
+                        ? toggleButton("vote", item.id, true, gettext("Revoke vote"))
+                        : toggleButton("vote", item.id, false, list.voteLabel);
                     html += item.favourite || list.alwaysFavourite
-                        ? icon("favourite_active.png", "favourite_remove", item.id,
-                            gettext("Remove from favourites"))
-                        : icon("favourite.png", "favourite_add", item.id,
-                            gettext("Add to favourites"));
+                        ? toggleButton("favourite", item.id, true, gettext("Remove from favourites"))
+                        : toggleButton("favourite", item.id, false, gettext("Add to favourites"));
                     html += "</td>";
                 }
                 list.columns.forEach((col) => {
-                    html += col.cell(item);
+                    // cells start with "<td", mark the ones small screens leave out
+                    html += col.cell(item).replace(/^<td/, "<td" + Music.hideAttribute(col));
                 });
                 html += "</tr>";
             });

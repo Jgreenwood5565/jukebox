@@ -4,163 +4,196 @@
     <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="theme-color" content="{% if theme == 'light' %}#F6F7F9{% else %}#0B0C10{% endif %}"/>
         <title>{% trans "Democratic Jukebox - your democratic music player" %}</title>
         <meta name="description" content="{% trans 'Democratic Jukebox - your democratic music player' %}">
         <link rel="shortcut icon" href="{% static 'img/favicon.ico' %}" type="image/x-icon"/>
         <link type="text/css" rel="stylesheet" href="{% static 'css/music.css' %}" />
     </head>
-    <body data-static-url="{% static '' %}">
-        <div id="header">
-            <div id="logo">
-                <a href="{% url 'jukebox_web_index' %}">
-                    <img src="{% static 'img/jukebox.png' %}" alt="{% trans 'Jukebox logo' %}" width="156" height="40" />
-                </a>
-            </div>
-            <div id="profile" title="{% trans 'Account options' %}">
-                <span class="username">{{ username }}</span>
-                <span class="options"></span>
-            </div>
-            <div id="search">
-                <div class="searchbox">
-                    <form action="/api/v1/songs" method="get" id="searchform">
-                        <label for="term" class="invisible">{% trans 'Search term' %}</label>
-                        <input type="text" name="term" id="term" maxlength="100" class="searchterm" />
-                        <span id="searchoptions" class="options"></span>
-                        <span class="searchsubmit">{% trans 'Search' %}</span>
-                        <button type="submit" class="invisible"></button>
-                    </form>
-                </div>
-            </div>
-            <div id="currentSong"{% if web_player %} class="withPlayer"{% endif %}>
-                {% if web_player %}
-                    <button type="button" id="listen" aria-pressed="false"></button>
-                {% endif %}
-                <strong>
-                    {% trans 'Now playing' %}
-                </strong>
-                <br />
-                <span class="songTitle"></span>
-                <span class="timeRemaining"></span>
-                {% if web_player %}
-                    <input type="range" id="volume" min="0" max="1" step="0.05" value="1"
-                        title="{% trans 'Volume' %}" aria-label="{% trans 'Volume' %}" />
-                {% endif %}
-            </div>
-        </div>
-        <div id="content">
-            <div id="sidebar">
-                <h1>
-                    {% trans 'Navigation' %}
-                </h1>
+    <body class="app">
+        <aside id="sidebar">
+            <a class="brand" href="{% url 'jukebox_web_index' %}" aria-label="{% trans 'Jukebox logo' %}">
+                {% include "logo.svg" %}
+                <span>jukebox</span>
+            </a>
+            <nav>
+                <h2>{% trans 'Navigation' %}</h2>
                 <ul>
                     <li>
                         <a href="/api/v1/queue" class="loadList loadQueue">
-                            {% trans 'Queue' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h14M3 12h10M3 18h7"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M20 17.5V9l2 1"/></svg>
+                            <span class="label">{% trans 'Queue' %}</span>
                         </a>
                     </li>
                     <li>
                         <a href="/api/v1/history" class="loadList loadHistory">
-                            {% trans 'History' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                            <span class="label">{% trans 'History' %}</span>
                         </a>
                     </li>
-                    <li class="second">
+                    <li>
                         <a href="/api/v1/history/my" class="loadList loadMyHistory">
-                            {% trans 'My History' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+                            <span class="label">{% trans 'My History' %}</span>
                         </a>
                     </li>
                     <li>
                         <a href="/api/v1/favourites" class="loadList loadFavourite">
-                            {% trans 'Favourites' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-8-4.7-8-10.6A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 8 2.6c0 5.9-8 10.6-8 10.6z"/></svg>
+                            <span class="label">{% trans 'Favourites' %}</span>
                         </a>
                     </li>
                 </ul>
 
-                <h1>
-                    {% trans "Music" %}
-                </h1>
+                <h2>{% trans "Music" %}</h2>
                 <ul>
                     <li>
                         <a href="/api/v1/songs" class="loadList loadSongs">
-                            {% trans 'Songs' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                            <span class="label">{% trans 'Songs' %}</span>
                         </a>
                     </li>
                     <li>
                         <a href="/api/v1/artists" class="loadList loadArtists">
-                            {% trans 'Artists' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+                            <span class="label">{% trans 'Artists' %}</span>
                         </a>
                     </li>
                     <li>
                         <a href="/api/v1/albums" class="loadList loadAlbums">
-                            {% trans 'Albums' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></svg>
+                            <span class="label">{% trans 'Albums' %}</span>
                         </a>
                     </li>
                     <li>
                         <a href="/api/v1/genres" class="loadList loadGenres">
-                            {% trans 'Genres' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+                            <span class="label">{% trans 'Genres' %}</span>
                         </a>
                     </li>
                     <li>
                         <a href="/api/v1/years" class="loadList loadYears">
-                            {% trans 'Years' %}
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>
+                            <span class="label">{% trans 'Years' %}</span>
                         </a>
                     </li>
                 </ul>
-            </div>
-            <div id="main_spacer"></div>
-            <div id="main">
+            </nav>
+        </aside>
 
-            </div>
+        <div id="page">
+            <header id="topbar">
+                <form action="/api/v1/songs" method="get" id="searchform" role="search">
+                    <svg class="searchIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <label for="term" class="invisible">{% trans 'Search term' %}</label>
+                    <input type="search" name="term" id="term" maxlength="100" class="searchterm"
+                        placeholder="{% trans 'Search' %}" autocomplete="off" />
+                    <button type="button" id="searchoptions" class="iconButton"
+                        title="{% trans 'Search options' %}" aria-label="{% trans 'Search options' %}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M19 6h1M4 12h3M13 12h7M4 18h11M21 18h-1"/><circle cx="16" cy="6" r="2.5"/><circle cx="10" cy="12" r="2.5"/><circle cx="18" cy="18" r="2.5"/></svg>
+                    </button>
+                    <button type="submit" class="invisible"></button>
+                </form>
+                <button type="button" id="profile" title="{% trans 'Account options' %}" aria-haspopup="true">
+                    <span class="avatar" aria-hidden="true">{{ username|first|upper }}</span>
+                    <span class="username">{{ username }}</span>
+                    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+            </header>
+
+            <main id="main"></main>
         </div>
-        <div id="searchdetails">
+
+        <footer id="nowPlaying" class="idle">
+            <div class="npProgress" aria-hidden="true"><div class="fill"></div></div>
+            <div id="currentSong" class="npTrack">
+                <div class="cover" aria-hidden="true"><span></span></div>
+                <div class="npText">
+                    <strong class="npLabel">
+                        <span class="equalizer" aria-hidden="true"><i></i><i></i><i></i></span>
+                        {% trans 'Now playing' %}
+                    </strong>
+                    <span class="songTitle"></span>
+                    <span class="songArtist"></span>
+                </div>
+            </div>
+            <div class="npControls">
+                {% if web_player %}
+                    <button type="button" id="listen" aria-pressed="false">
+                        <svg class="iconPlay" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.8v12.4a1 1 0 0 0 1.5.9l10-6.2a1 1 0 0 0 0-1.8l-10-6.2A1 1 0 0 0 8 5.8z"/></svg>
+                        <svg class="iconStop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>
+                    </button>
+                {% endif %}
+                <div class="npTime">
+                    <span class="elapsed">0:00</span>
+                    <div class="npBar" aria-hidden="true"><div class="fill"></div></div>
+                    <span class="duration">0:00</span>
+                </div>
+            </div>
+            <div class="npSide">
+                <span class="npVotes"></span>
+                {% if web_player %}
+                    <label class="volume">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+                        <input type="range" id="volume" min="0" max="1" step="0.05" value="1"
+                            title="{% trans 'Volume' %}" aria-label="{% trans 'Volume' %}" />
+                    </label>
+                {% endif %}
+            </div>
+        </footer>
+
+        <div id="searchdetails" class="popover">
             <form action="/api/v1/songs" method="get" id="searchdetailsform">
                 <div class="option">
-                    <label for="search_title">{% trans 'Title' %}:</label>
+                    <label for="search_title">{% trans 'Title' %}</label>
                     <input type="text" name="search_title" id="search_title" />
                 </div>
                 <div class="option">
-                    <label for="search_artist">{% trans 'Artist' %}:</label>
+                    <label for="search_artist">{% trans 'Artist' %}</label>
                     <input type="text" name="search_artist" id="search_artist" />
                 </div>
                 <div class="option">
-                    <label for="search_album">{% trans 'Album' %}:</label>
+                    <label for="search_album">{% trans 'Album' %}</label>
                     <input type="text" name="search_album" id="search_album" />
                 </div>
-                <div class="option">
-                    <label for="search_genre">{% trans 'Genre' %}:</label>
-                    <select name="search_genre" id="search_genre">
-                        <option value="">{% trans "All genres" %}</option>
-                        {% for genre in genres %}
-                            <option value="{{ genre.id }}">{{ genre.Name }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="optionRow">
+                    <div class="option">
+                        <label for="search_genre">{% trans 'Genre' %}</label>
+                        <select name="search_genre" id="search_genre">
+                            <option value="">{% trans "All genres" %}</option>
+                            {% for genre in genres %}
+                                <option value="{{ genre.id }}">{{ genre.Name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="option">
+                        <label for="search_year">{% trans 'Year' %}</label>
+                        <select name="search_year" id="search_year">
+                            <option value="">{% trans 'All years' %}</option>
+                            {% for year in years %}
+                                <option value="{{ year }}">{{ year }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
-                <div class="option">
-                    <label for="search_year">{% trans 'Year' %}:</label>
-                    <select name="search_year" id="search_year">
-                        <option value="">{% trans 'All years' %}</option>
-                        {% for year in years %}
-                            <option value="{{ year }}">{{ year }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="option">
-                    <span class="searchreset">{% trans 'Reset' %}</span>
-                    <span class="searchsubmit">{% trans 'Search' %}</span>
-                    <button type="submit" class="invisible"></button>
+                <div class="actions">
+                    <button type="button" class="button secondary searchreset">{% trans 'Reset' %}</button>
+                    <button type="submit" class="button searchsubmit">{% trans 'Search' %}</button>
                 </div>
             </form>
         </div>
-        <div id="accountoptions">
-            <h1>{% trans 'Switch language' %}</h1>
+
+        <div id="accountoptions" class="popover">
+            <h2>{% trans 'Switch language' %}</h2>
             <ul>
-                <li>
+                <li{% if LANGUAGE_CODE == 'en' %} class="active"{% endif %}>
                     <a href="{% url 'jukebox_web_language' 'en' %}">{% trans 'English' %}</a>
                 </li>
-                <li>
+                <li{% if LANGUAGE_CODE == 'de' %} class="active"{% endif %}>
                     <a href="{% url 'jukebox_web_language' 'de' %}">{% trans 'German' %}</a>
                 </li>
             </ul>
-            <h1>{% trans 'Theme' %}</h1>
+            <h2>{% trans 'Theme' %}</h2>
             <ul>
                 <li{% if theme == 'dark' %} class="active"{% endif %}>
                     <a href="{% url 'jukebox_web_theme' 'dark' %}">{% trans 'Dark' %}</a>
@@ -169,16 +202,12 @@
                     <a href="{% url 'jukebox_web_theme' 'light' %}">{% trans 'Light' %}</a>
                 </li>
             </ul>
-            <h1>{% trans 'Misc' %}</h1>
-            <ul>
-                <li>
-                    <form action="{% url 'jukebox_web_logout' %}" method="post">
-                        {% csrf_token %}
-                        <button type="submit" class="linkbutton">{% trans 'Logout' %}</button>
-                    </form>
-                </li>
-            </ul>
+            <form action="{% url 'jukebox_web_logout' %}" method="post">
+                {% csrf_token %}
+                <button type="submit" class="linkbutton">{% trans 'Logout' %}</button>
+            </form>
         </div>
+
         <div id="csrf_token">
             {% csrf_token %}
         </div>

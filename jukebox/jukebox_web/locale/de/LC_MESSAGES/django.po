@@ -41,7 +41,7 @@ msgstr "Suchen"
 
 #: templates/index.html:41
 msgid "Now playing"
-msgstr "Aktuell läuft:"
+msgstr "Läuft gerade"
 
 #: templates/index.html:51
 msgid "Navigation"
@@ -173,3 +173,6 @@ msgstr "Hell"
 
 msgid "Volume"
 msgstr "Lautstärke"
+
+msgid "Search options"
+msgstr "Suchoptionen"

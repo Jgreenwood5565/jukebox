@@ -40,7 +40,7 @@ msgstr "Search"
 
 #: templates/index.html:41
 msgid "Now playing"
-msgstr "Now playing:"
+msgstr "Now playing"
 
 #: templates/index.html:51
 msgid "Navigation"

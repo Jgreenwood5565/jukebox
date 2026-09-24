@@ -102,3 +102,6 @@ msgstr "Anhören"
 
 msgid "Stop listening"
 msgstr "Nicht mehr anhören"
+
+msgid "Nothing is playing yet"
+msgstr "Noch läuft nichts"
