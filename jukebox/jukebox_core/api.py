@@ -380,7 +380,10 @@ class songs(api_base):
             return song_instance
 
     def getRandomSong(self):  # noqa: N802
-        song_instance = Song.objects.select_related("Artist").order_by("?").first()
+        # avoid repeating what just played, unless the library is that small
+        last_played = list(History.objects.values_list("Song", flat=True)[:50])
+        random_songs = Song.objects.select_related("Artist").order_by("?")
+        song_instance = random_songs.exclude(id__in=last_played).first() or random_songs.first()
         if song_instance is None:
             raise Song.DoesNotExist("The music library is empty")
         return song_instance

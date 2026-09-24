@@ -2,10 +2,10 @@
 
 **Let everyone in the room decide what plays next.**
 
-Jukebox is a self-hosted music player for offices, shared flats and parties. It indexes your MP3 library
-and gives everyone a web interface to search it and vote for songs. The more votes a song gets, the
-sooner it plays. When the queue runs empty the jukebox keeps going and picks music that matches the
-taste of whoever is currently online.
+Jukebox is a self-hosted music player for offices, shared flats and parties. It indexes your music
+library (MP3, FLAC, AAC/M4A, Ogg and Opus) and gives everyone a web interface to search it and vote
+for songs. The more votes a song gets, the sooner it plays. When the queue runs empty the jukebox
+keeps going and picks music that matches the taste of whoever is currently online.
 
 ![Jukebox queue in dark mode](docs/screenshots/queue-dark.png)
 
@@ -114,8 +114,8 @@ step.
 
 ## Playback
 
-The jukebox plays in the browser. Press the play button next to "Now playing" and the page streams
-the current song from the server. The server keeps the clock: everyone listening hears the same song
+The jukebox plays in the browser. Press the play button in the player bar and the page streams the
+current song from the server. The server keeps the clock: everyone listening hears the same song
 at the same position, a song picked from the queue starts for all listeners at once, and skipping
 skips for everyone. The jukebox only moves on while at least one person has the page open. Phones
 show the song on the lock screen.

@@ -28,5 +28,9 @@ v0.6.0, unreleased -- Web player
       listener hears the same song, skipping skips for everyone
     - Songs stream with HTTP range support at /api/v1/songs/<id>/stream
     - JUKEBOX_WEB_PLAYER=0 leaves playback to plugins as before
+    - FLAC, AAC/M4A, Ogg and Opus files besides MP3
+    - Tags keep their capitalization, artists, albums and genres are still
+      matched ignoring case
+    - Autoplay avoids songs played recently
     - Fixed "database is locked" errors when several requests pick or record
       songs at the same time

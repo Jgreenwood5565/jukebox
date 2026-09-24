@@ -1,4 +1,3 @@
-import mimetypes
 import os
 import re
 
@@ -117,6 +116,14 @@ class songs_skip(JukeboxAPIView):
 
 
 RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
+# explicit, slim container images have no system MIME type table
+AUDIO_CONTENT_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+}
 STREAM_CHUNK_SIZE = 64 * 1024
 
 
@@ -161,7 +168,9 @@ def ranged_file_response(request, path):
 
     file.seek(start)
     length = end - start + 1
-    content_type = mimetypes.guess_type(path)[0] or "audio/mpeg"
+    content_type = AUDIO_CONTENT_TYPES.get(
+        os.path.splitext(path)[1].lower(), "application/octet-stream"
+    )
     response = StreamingHttpResponse(
         _read_chunks(file, length),
         status=206 if ranged else 200,

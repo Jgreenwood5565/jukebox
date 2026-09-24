@@ -126,6 +126,16 @@ class StreamTest(ApiTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.content(response), AUDIO)
 
+    def testFlacContentType(self):
+        flac = self.path[:-4] + ".flac"
+        os.rename(self.path, flac)
+        self.addCleanup(os.rename, flac, self.path)
+        self.song.Filename = flac
+        self.song.save()
+        response = self.stream()
+        self.assertEqual(response["Content-Type"], "audio/flac")
+        self.assertEqual(self.content(response), AUDIO)
+
     def testBasicAuth(self):
         response = self.httpGet(self.url)
         self.assertEqual(response.status_code, 200)
