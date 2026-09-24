@@ -147,11 +147,11 @@ current song from the server. The server keeps the clock: everyone listening hea
 at the same position, and a song picked from the queue starts for all listeners at once. A song is
 skipped once most of the people listening vote to skip it; admins skip right away. FLAC and other
 formats are converted to 192 kbit/s MP3 on the fly, so hi-res files stream fine to phones. Cover art
-comes from the files' tags or a `cover.jpg` next to them. The jukebox only moves on while at least one person has the page open. Phones
-show the song on the lock screen.
+comes from the files' tags or a `cover.jpg` next to them. The jukebox only moves on while at least
+one person has the page open. Phones show the song and its cover on the lock screen.
 
-The audio is plain HTTP from the jukebox, so each listener downloads every song it plays; that is
-small for a home network but worth knowing on a metered connection.
+Every listener streams from the jukebox, about 1.5 MB per minute at 192 kbit/s. Converting costs CPU
+for each listener; a Raspberry Pi handles a household of listeners.
 
 Before the web player, playback plugins pulled the next song and played it. To use one, set
 `JUKEBOX_WEB_PLAYER=0`, since both would pick songs:
