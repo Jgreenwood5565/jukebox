@@ -25,6 +25,11 @@ keeps going and picks music that matches the taste of whoever is currently onlin
 - **RSS feed** of the next song at `/feed/`
 - English and German interface
 
+<p>
+  <img src="docs/screenshots/songs-light.png" alt="Song library in the light theme" width="68%">
+  <img src="docs/screenshots/mobile-dark.png" alt="Queue on a phone" width="24%">
+</p>
+
 ## Requirements
 
 - Python 3.10 or newer
