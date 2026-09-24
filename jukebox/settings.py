@@ -9,6 +9,7 @@ so it may override or extend anything defined here.
 import os
 import pkgutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -178,8 +179,15 @@ AUTH_PASSWORD_VALIDATORS = [
 JUKEBOX_TRUSTED_PROXIES = _env_list("JUKEBOX_TRUSTED_PROXIES", "")
 
 # served through HTTPS (usually by a reverse proxy): only send cookies over HTTPS
+# and send plain HTTP requests, e.g. to the server's own address, to the HTTPS
+# site, the first of JUKEBOX_CSRF_TRUSTED_ORIGINS. Without that a login over
+# plain HTTP loses its cookie and silently ends up at the login page again.
 if _env_bool("JUKEBOX_HTTPS"):
     SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = LANGUAGE_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_HOST = urlparse(CSRF_TRUSTED_ORIGINS[0]).netloc if CSRF_TRUSTED_ORIGINS else None
+    # the container's health check talks plain HTTP to itself
+    SECURE_REDIRECT_EXEMPT = [r"^healthz$"]
 
 # play the queue in the browser: the server keeps the "now playing" clock and
 # every listener hears the same song. Turn off if a player plugin (jukebox_mpg123,

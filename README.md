@@ -97,7 +97,7 @@ directory. `settings_local.py` can override any Django setting; see
 | `JUKEBOX_TRANSCODE` | on | Stream everything but MP3 as MP3, needs `ffmpeg` (included in the Docker image) |
 | `JUKEBOX_TRANSCODE_BITRATE` | `192` | Bitrate in kbit/s of those MP3 streams |
 | `JUKEBOX_TRUSTED_PROXIES` | none | Reverse proxy addresses whose `X-Forwarded-For` header is trusted |
-| `JUKEBOX_HTTPS` | off | Served through HTTPS: only send cookies over HTTPS |
+| `JUKEBOX_HTTPS` | off | Served through HTTPS: HTTPS-only cookies, plain HTTP requests are redirected to the first `JUKEBOX_CSRF_TRUSTED_ORIGINS` |
 | `JUKEBOX_CSRF_TRUSTED_ORIGINS` | none | Origins like `https://jukebox.example.org` when behind an HTTPS proxy |
 | `JUKEBOX_DEFAULT_THEME` | `dark` | `dark` or `light`, users can switch in the account menu |
 | `JUKEBOX_LOGIN_ATTEMPTS` | `10` | Failed logins per user and IP before a 15 minute lockout |

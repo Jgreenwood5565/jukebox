@@ -3,7 +3,7 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.messages import get_messages
-from django.http import HttpResponseNotAllowed, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseNotAllowed, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import translation
@@ -33,6 +33,11 @@ def index(request):
         "web_player": settings.JUKEBOX_WEB_PLAYER,
     }
     return render(request, "index.html", context)
+
+
+def healthz(request):
+    """For the container health check, no login needed and nothing revealed."""
+    return HttpResponse("ok", content_type="text/plain")
 
 
 class LoginView(auth_views.LoginView):

@@ -33,6 +33,24 @@ class SecurityTest(ApiTestBase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith("/login?next="))
 
+    def testPlainHttpGoesToTheHttpsSite(self):
+        with self.settings(SECURE_SSL_REDIRECT=True, SECURE_SSL_HOST="radio.example.org"):
+            response = Client().get("/login?next=/")
+            self.assertEqual(response.status_code, 301)
+            self.assertEqual(response["Location"], "https://radio.example.org/login?next=/")
+            # already HTTPS, e.g. through the proxy
+            self.assertEqual(Client().get("/login", secure=True).status_code, 200)
+
+    def testHealthCheckStaysOnPlainHttp(self):
+        with self.settings(
+            SECURE_SSL_REDIRECT=True,
+            SECURE_SSL_HOST="radio.example.org",
+            SECURE_REDIRECT_EXEMPT=[r"^healthz$"],
+        ):
+            response = Client().get("/healthz")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
     def testContentSecurityPolicy(self):
         policy = Client().get("/login")["Content-Security-Policy"]
         self.assertIn("default-src 'self'", policy)
