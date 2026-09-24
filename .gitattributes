@@ -1,0 +1,2 @@
+# runs in Linux containers, a CRLF checkout on Windows breaks the shebang
+*.sh text eol=lf
