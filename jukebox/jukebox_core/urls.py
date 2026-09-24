@@ -16,6 +16,11 @@ urlpatterns = [
         views.songs_stream.as_view(),
         name="jukebox_api_songs_stream",
     ),
+    path(
+        "api/v1/songs/<int:song_id>/cover",
+        views.songs_cover.as_view(),
+        name="jukebox_api_songs_cover",
+    ),
     path("api/v1/artists", views.artists.as_view(), name="jukebox_api_artists"),
     path("api/v1/albums", views.albums.as_view(), name="jukebox_api_albums"),
     path("api/v1/genres", views.genres.as_view(), name="jukebox_api_genres"),

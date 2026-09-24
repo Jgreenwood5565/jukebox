@@ -1,6 +1,5 @@
 import json
 import os
-import struct
 import tempfile
 from datetime import timedelta
 from unittest import mock
@@ -8,14 +7,13 @@ from unittest import mock
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 from mutagen.easyid3 import EasyID3
-from mutagen.flac import FLAC
 
 from jukebox.jukebox_core import api
 from jukebox.jukebox_core.api import parse_search_string
 from jukebox.jukebox_core.models import Favourite, History, Player, Queue, Song
 from jukebox.jukebox_core.utils import FileIndexer
 
-from .base import ApiTestBase
+from .base import ApiTestBase, write_flac
 
 API_URLS = [
     "/api/v1/songs",
@@ -283,23 +281,14 @@ class FileIndexerTest(ApiTestBase):
         self.assertIsNone(FileIndexer().index(filename))
         self.assertEqual(Song.objects.count(), 1)
 
-    def writeFlac(self, name, seconds, **tags):  # noqa: N802
-        # just the STREAMINFO block: 44.1 kHz, stereo, 16 bit and the sample count
-        rate = 44100
-        info = (rate << 44) | (1 << 41) | (15 << 36) | (rate * seconds)
-        streaminfo = struct.pack(">HH", 4096, 4096) + bytes(6) + info.to_bytes(8, "big") + bytes(16)
-        filename = os.path.join(self.tmp.name, name)
-        with open(filename, "wb") as f:
-            # last metadata block, type STREAMINFO
-            f.write(b"fLaC" + bytes([0x80]) + len(streaminfo).to_bytes(3, "big") + streaminfo)
-        flac = FLAC(filename)
-        for key, value in tags.items():
-            flac[key] = value
-        flac.save()
-        return filename
-
     def testIndexFlac(self):
-        filename = self.writeFlac("song.flac", 3, artist="Radiohead", title="Airbag", date="1997")
+        filename = write_flac(
+            os.path.join(self.tmp.name, "song.flac"),
+            3,
+            artist="Radiohead",
+            title="Airbag",
+            date="1997",
+        )
         song = FileIndexer().index(filename)
         self.assertEqual(song.Artist.Name, "Radiohead")
         self.assertEqual(song.Title, "Airbag")

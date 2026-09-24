@@ -1,3 +1,4 @@
+import math
 import os
 import re
 
@@ -9,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import api, forms
+from . import api, forms, media
 from .models import Favourite, History, Queue, Song
 
 
@@ -95,24 +96,46 @@ class songs(ListView):
 
 class songs_current(JukeboxAPIView):
     def get(self, request):
-        try:
-            if settings.JUKEBOX_WEB_PLAYER:
-                current = api.radio().current()
-            else:
-                current = api.history().getCurrent()
-        except History.DoesNotExist:
-            current = {}
+        if not settings.JUKEBOX_WEB_PLAYER:
+            try:
+                return Response(data=api.history().getCurrent())
+            except History.DoesNotExist:
+                return Response(data={})
 
+        radio = api.radio()
+        if request.GET.get("listening"):
+            radio.listen(request.user.id)
+        try:
+            current = radio.current()
+        except History.DoesNotExist:
+            return Response(data={})
+
+        filename = Song.objects.filter(id=current["id"]).values_list("Filename", flat=True).first()
+        current.update(radio.skip_state(current["historyId"], request.user.id))
+        current["transcoded"] = bool(filename) and media.needs_transcoding(filename)
+        current["cover"] = (
+            reverse("jukebox_api_songs_cover", kwargs={"song_id": current["id"]})
+            if filename and media.cover_source(filename)
+            else None
+        )
         return Response(data=current)
 
 
 class songs_skip(JukeboxAPIView):
     def post(self, request):
-        if settings.JUKEBOX_WEB_PLAYER:
-            api.radio().skip()
-        else:
+        if not settings.JUKEBOX_WEB_PLAYER:
             api.songs().skipCurrentSong()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        try:
+            history_id = int(request.data.get("historyId"))
+        except (TypeError, ValueError):
+            history_id = None
+        # admins skip right away, everybody else votes
+        result = api.radio().vote_skip(
+            request.user.id, history_id=history_id, force=request.user.is_staff
+        )
+        return Response(data=result)
 
 
 RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
@@ -183,20 +206,74 @@ def ranged_file_response(request, path):
     return response
 
 
-class songs_stream(JukeboxAPIView):
+def _pipe_chunks(process):
+    try:
+        while True:
+            chunk = process.stdout.read1(STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        # the listener left or the song is done
+        process.kill()
+        process.wait()
+        process.stdout.close()
+
+
+def transcoded_response(request, path):
+    """Stream ``path`` as MP3, starting ``?start=`` seconds in.
+
+    There is no seeking in a live conversion, so the web player asks for the
+    position it joins at instead.
+    """
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    try:
+        start = float(request.GET.get("start", 0))
+    except ValueError:
+        start = 0
+    if not math.isfinite(start) or start < 0:
+        start = 0
+
+    response = StreamingHttpResponse(
+        _pipe_chunks(media.transcode(path, start)), content_type="audio/mpeg"
+    )
+    response["Accept-Ranges"] = "none"
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+class BinaryAPIView(JukeboxAPIView):
     def perform_content_negotiation(self, request, force=False):
-        # the audio isn't rendered by DRF, don't fail on the browser's audio Accept header
+        # the response isn't rendered by DRF, don't fail on the browser's Accept header
         return super().perform_content_negotiation(request, force=True)
 
+
+class songs_stream(BinaryAPIView):
     def get(self, request, song_id):
         if not settings.JUKEBOX_WEB_PLAYER:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
         try:
             song = Song.objects.get(id=song_id)
+            if media.needs_transcoding(song.Filename):
+                return transcoded_response(request, song.Filename)
             return ranged_file_response(request, song.Filename)
         except (Song.DoesNotExist, OSError):
             return Response(status=status.HTTP_404_NOT_FOUND)
+
+
+class songs_cover(BinaryAPIView):
+    def get(self, request, song_id):
+        song = Song.objects.filter(id=song_id).first()
+        cover = media.read_cover(song.Filename) if song is not None else None
+        if cover is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        data, content_type = cover
+        response = HttpResponse(data, content_type=content_type)
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
 
 
 class artists(ListView):

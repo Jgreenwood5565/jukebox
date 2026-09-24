@@ -12,6 +12,7 @@ from collections import Counter
 from signal import SIGABRT
 
 from django.contrib.sessions.models import Session
+from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import InvalidPage, Paginator
 from django.db import transaction
@@ -671,6 +672,14 @@ class years(api_base):
 # picking the next song must happen once, gunicorn runs a single process
 _radio_lock = threading.Lock()
 
+LISTENERS_KEY = "jukebox:listeners"
+# web players ask for the current song every 10 seconds
+LISTENER_TIMEOUT = 30
+
+
+def _skip_votes_key(history_id):
+    return f"jukebox:skip-votes:{history_id}"
+
 
 class radio:
     """Clock of the web player, every listener hears the same song.
@@ -678,6 +687,8 @@ class radio:
     The newest history entry is on air since its ``Created`` time. Once it is
     over, the next request for the current song picks the next one, so the
     jukebox only moves on while somebody has it open.
+
+    Listeners and skip votes are kept in the cache, it's fine to lose them.
     """
 
     def current(self):
@@ -690,6 +701,54 @@ class radio:
     def skip(self):
         with _radio_lock:
             self._next()
+
+    def listen(self, user_id):
+        """Remember that ``user_id`` has the web player running."""
+        with _radio_lock:
+            listeners = self._listeners()
+            listeners[user_id] = time.time()
+            cache.set(LISTENERS_KEY, listeners, None)
+
+    def _listeners(self):
+        now = time.time()
+        return {
+            user_id: seen
+            for user_id, seen in cache.get(LISTENERS_KEY, {}).items()
+            if now - seen < LISTENER_TIMEOUT
+        }
+
+    def _votes_needed(self, user_id):
+        # a majority of the listeners, counting whoever asks
+        return len(set(self._listeners()) | {user_id}) // 2 + 1
+
+    def skip_state(self, history_id, user_id):
+        votes = cache.get(_skip_votes_key(history_id), set())
+        return {
+            "skipVotes": len(votes),
+            "skipNeeded": self._votes_needed(user_id),
+            "skipVoted": user_id in votes,
+        }
+
+    def vote_skip(self, user_id, history_id=None, force=False):
+        """Vote to skip the current song, it's skipped once most listeners agree.
+
+        A vote for ``history_id`` counts only while that entry is on air, so it
+        doesn't skip the next song when it arrives late. ``force`` skips right away.
+        """
+        with _radio_lock:
+            item = History.objects.first()
+            if item is None or (history_id is not None and history_id != item.id):
+                return {"skipped": False}
+
+            key = _skip_votes_key(item.id)
+            votes = cache.get(key, set()) | {user_id}
+            if force or len(votes) >= self._votes_needed(user_id):
+                cache.delete(key)
+                self._next()
+                return {"skipped": True}
+
+            cache.set(key, votes, 60 * 60)
+        return {"skipped": False, **self.skip_state(item.id, user_id)}
 
     def _next(self):
         try:

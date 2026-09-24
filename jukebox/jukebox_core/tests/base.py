@@ -1,7 +1,10 @@
 import base64
+import struct
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
+from mutagen.flac import FLAC, Picture
 
 from jukebox.jukebox_core.models import Album, Artist, Genre, Song
 
@@ -14,6 +17,8 @@ class ApiTestBase(TestCase):
     password = "TestPassword"
 
     def setUp(self):
+        # login attempts, listeners and skip votes
+        cache.clear()
         self.passwords = {}
         # register test user and setup auth
         self.user = self.addUser(self.username, self.email, self.password)
@@ -66,3 +71,25 @@ class ApiTestBase(TestCase):
         user = User.objects.create_user(username, email, password)
         self.passwords[user.id] = password
         return user
+
+
+def write_flac(filename, seconds, picture=None, **tags):
+    """Write a FLAC file without audio frames, enough for mutagen and the indexer."""
+    # just the STREAMINFO block: 44.1 kHz, stereo, 16 bit and the sample count
+    rate = 44100
+    info = (rate << 44) | (1 << 41) | (15 << 36) | (rate * seconds)
+    streaminfo = struct.pack(">HH", 4096, 4096) + bytes(6) + info.to_bytes(8, "big") + bytes(16)
+    with open(filename, "wb") as f:
+        # last metadata block, type STREAMINFO
+        f.write(b"fLaC" + bytes([0x80]) + len(streaminfo).to_bytes(3, "big") + streaminfo)
+    flac = FLAC(filename)
+    for key, value in tags.items():
+        flac[key] = value
+    if picture is not None:
+        embedded = Picture()
+        embedded.type = 3
+        embedded.mime = "image/png"
+        embedded.data = picture
+        flac.add_picture(embedded)
+    flac.save()
+    return filename

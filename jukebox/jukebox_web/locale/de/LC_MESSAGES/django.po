@@ -176,3 +176,6 @@ msgstr "Lautstärke"
 
 msgid "Search options"
 msgstr "Suchoptionen"
+
+msgid "Vote to skip"
+msgstr "Für Überspringen stimmen"

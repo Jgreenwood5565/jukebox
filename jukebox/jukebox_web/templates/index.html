@@ -107,7 +107,7 @@
         <footer id="nowPlaying" class="idle">
             <div class="npProgress" aria-hidden="true"><div class="fill"></div></div>
             <div id="currentSong" class="npTrack">
-                <div class="cover" aria-hidden="true"><span></span></div>
+                <div class="cover" aria-hidden="true"><span></span><img alt="" hidden /></div>
                 <div class="npText">
                     <strong class="npLabel">
                         <span class="equalizer" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -122,6 +122,11 @@
                     <button type="button" id="listen" aria-pressed="false">
                         <svg class="iconPlay" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.8v12.4a1 1 0 0 0 1.5.9l10-6.2a1 1 0 0 0 0-1.8l-10-6.2A1 1 0 0 0 8 5.8z"/></svg>
                         <svg class="iconStop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>
+                    </button>
+                    <button type="button" id="skip" aria-pressed="false" hidden
+                        title="{% trans 'Vote to skip' %}" aria-label="{% trans 'Vote to skip' %}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5v13l10-6.5z"/><path d="M19 5v14"/></svg>
+                        <span class="skipCount"></span>
                     </button>
                 {% endif %}
                 <div class="npTime">

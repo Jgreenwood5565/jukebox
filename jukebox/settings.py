@@ -70,6 +70,7 @@ WHITENOISE_USE_FINDERS = True
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "jukebox.jukebox_web.middleware.content_security_policy",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
@@ -129,7 +130,7 @@ INSTALLED_APPS += JUKEBOX_PLUGINS
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
+        "jukebox.jukebox_core.authentication.ThrottledBasicAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -155,14 +156,37 @@ SESSION_TTL = 300
 # allow logging in with a jukebox username and password (create users with
 # "jukebox jukebox_adduser" or in the admin), in addition to social auth
 JUKEBOX_LOCAL_LOGIN = _env_bool("JUKEBOX_LOCAL_LOGIN", True)
-# failed local logins per user and IP address before further attempts are refused
+# failed logins per user and IP address before further attempts are refused,
+# counts the login page, the admin and HTTP basic auth of the API
 JUKEBOX_LOGIN_ATTEMPTS = 10
 JUKEBOX_LOGIN_LOCKOUT = 15 * 60
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+# addresses of reverse proxies (e.g. Caddy) whose X-Forwarded-For header tells
+# the real client address, comma separated
+JUKEBOX_TRUSTED_PROXIES = _env_list("JUKEBOX_TRUSTED_PROXIES", "")
+
+# served through HTTPS (usually by a reverse proxy): only send cookies over HTTPS
+if _env_bool("JUKEBOX_HTTPS"):
+    SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = LANGUAGE_COOKIE_SECURE = True
 
 # play the queue in the browser: the server keeps the "now playing" clock and
 # every listener hears the same song. Turn off if a player plugin (jukebox_mpg123,
 # jukebox_shout, ...) plays the queue instead, both would pick songs.
 JUKEBOX_WEB_PLAYER = _env_bool("JUKEBOX_WEB_PLAYER", True)
+# stream everything but MP3 as MP3 of this bitrate (needs ffmpeg), FLAC and
+# hi-res files are far too big to stream as they are
+JUKEBOX_TRANSCODE = _env_bool("JUKEBOX_TRANSCODE", True)
+JUKEBOX_TRANSCODE_BITRATE = int(os.environ.get("JUKEBOX_TRANSCODE_BITRATE", "192"))
 
 # "dark" or "light", every user can switch in the account menu
 JUKEBOX_DEFAULT_THEME = os.environ.get("JUKEBOX_DEFAULT_THEME", "dark")

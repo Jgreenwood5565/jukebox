@@ -93,6 +93,11 @@ directory. `settings_local.py` can override any Django setting; see
 | `SECRET_KEY` / `JUKEBOX_SECRET_KEY` | generated | Signs sessions, created on first start if unset |
 | `JUKEBOX_LOCAL_LOGIN` | on | Username/password login on the login page |
 | `JUKEBOX_WEB_PLAYER` | on | Play the queue in the browser, turn off when a playback plugin plays it |
+| `JUKEBOX_TRANSCODE` | on | Stream everything but MP3 as MP3, needs `ffmpeg` (included in the Docker image) |
+| `JUKEBOX_TRANSCODE_BITRATE` | `192` | Bitrate in kbit/s of those MP3 streams |
+| `JUKEBOX_TRUSTED_PROXIES` | none | Reverse proxy addresses whose `X-Forwarded-For` header is trusted |
+| `JUKEBOX_HTTPS` | off | Served through HTTPS: only send cookies over HTTPS |
+| `JUKEBOX_CSRF_TRUSTED_ORIGINS` | none | Origins like `https://jukebox.example.org` when behind an HTTPS proxy |
 | `JUKEBOX_DEFAULT_THEME` | `dark` | `dark` or `light`, users can switch in the account menu |
 | `JUKEBOX_LOGIN_ATTEMPTS` | `10` | Failed logins per user and IP before a 15 minute lockout |
 | `SESSION_TTL` | `300` | Seconds without activity before a user no longer counts as online |
@@ -117,12 +122,31 @@ gunicorn jukebox.wsgi:application --bind 127.0.0.1:8000
 Static files are served by the application itself through WhiteNoise, so there is no `collectstatic`
 step.
 
+### On the internet
+
+Put it behind a reverse proxy that terminates HTTPS (Caddy, nginx, ...) and tell the jukebox about it,
+for example with the proxy at `10.0.0.8` and the name `jukebox.example.org`:
+
+```sh
+JUKEBOX_ALLOWED_HOSTS=jukebox.example.org
+JUKEBOX_CSRF_TRUSTED_ORIGINS=https://jukebox.example.org
+JUKEBOX_TRUSTED_PROXIES=10.0.0.8
+JUKEBOX_HTTPS=1
+```
+
+`JUKEBOX_TRUSTED_PROXIES` also tells gunicorn in the Docker image to trust the proxy. What's already in
+place: every API request needs a login, failed logins are limited per address and user name on the
+login page, the admin and the API alike, passwords need at least 10 characters and must not be common
+ones, and pages send a Content-Security-Policy. There is no sign-up, accounts are created by an admin.
+
 ## Playback
 
 The jukebox plays in the browser. Press the play button in the player bar and the page streams the
 current song from the server. The server keeps the clock: everyone listening hears the same song
-at the same position, a song picked from the queue starts for all listeners at once, and skipping
-skips for everyone. The jukebox only moves on while at least one person has the page open. Phones
+at the same position, and a song picked from the queue starts for all listeners at once. A song is
+skipped once most of the people listening vote to skip it; admins skip right away. FLAC and other
+formats are converted to 192 kbit/s MP3 on the fly, so hi-res files stream fine to phones. Cover art
+comes from the files' tags or a `cover.jpg` next to them. The jukebox only moves on while at least one person has the page open. Phones
 show the song on the lock screen.
 
 The audio is plain HTTP from the jukebox, so each listener downloads every song it plays; that is

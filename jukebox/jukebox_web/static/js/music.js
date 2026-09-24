@@ -216,6 +216,9 @@
         fetched: 0,
         // seconds this browser plays behind the server clock
         lag: 0,
+        // a converted stream starts at the position asked for, its time starts at 0
+        offset: 0,
+        length: 0,
         pollTimer: null,
 
         init: function () {
@@ -297,7 +300,7 @@
             Player.current = data;
             Player.fetched = Date.now();
             if (Player.listening && data.historyId === Player.historyId && !Player.audio.paused) {
-                Player.lag = Math.max(data.position - Player.audio.currentTime, 0);
+                Player.lag = Math.max(data.position - Player.elapsed(), 0);
             }
             Player.sync();
         },
@@ -312,7 +315,7 @@
             // if the song here simply ended on the server, what's left of it
             // is about the lag, anything more means it was skipped
             const audio = Player.audio;
-            const left = audio.duration - audio.currentTime;
+            const left = Player.length - Player.elapsed();
             if (Player.historyId !== null && !audio.paused && !audio.ended &&
                 left + data.position < Player.lag + END_SLACK) {
                 // "ended" syncs again
@@ -330,8 +333,19 @@
 
             Player.historyId = data.historyId;
             Player.lag = 0;
-            Player.audio.src = "/api/v1/songs/" + encodeURIComponent(data.id) + "/stream" +
-                (position > 0 ? "#t=" + position.toFixed(1) : "");
+            Player.length = data.length;
+            // a converted stream can't seek, the server starts it at the position instead
+            Player.offset = data.transcoded ? position : 0;
+            const url = "/api/v1/songs/" + encodeURIComponent(data.id) + "/stream";
+            if (position === 0) {
+                Player.audio.src = url;
+            }
+            else if (data.transcoded) {
+                Player.audio.src = url + "?start=" + position.toFixed(1);
+            }
+            else {
+                Player.audio.src = url + "#t=" + position.toFixed(1);
+            }
             Player.audio.play().catch((error) => {
                 // the browser wants a click first, a new song interrupting is fine
                 if (error.name === "NotAllowedError") {
@@ -343,9 +357,15 @@
                 navigator.mediaSession.metadata = new window.MediaMetadata({
                     title: data.title,
                     artist: data.artist.name || "",
-                    album: data.album.title || ""
+                    album: data.album.title || "",
+                    artwork: data.cover ? [{src: new URL(data.cover, location.href).href}] : []
                 });
             }
+        },
+
+        // seconds into the song as heard here
+        elapsed: function () {
+            return Player.offset + Player.audio.currentTime;
         },
 
         setButton: function () {
@@ -410,6 +430,7 @@
             $(window).on("scroll", Music.loadOnScroll);
 
             Player.init();
+            Music.initPlayerBar();
             Music.getCurrentSong();
             Music.ping();
             Music.setActiveMenu($("#sidebar a.loadQueue"));
@@ -622,7 +643,9 @@
 
         getCurrentSong: function () {
             clearTimeout(Music.currentSongTimer);
-            $.ajax({url: "/api/v1/songs/current"}).done((data) => {
+            // tells the server who is listening, skip votes need a majority of them
+            const params = Player.listening ? {listening: 1} : {};
+            $.ajax({url: "/api/v1/songs/current", data: params}).done((data) => {
                 Player.receive(data);
                 Music.showCurrentSong(data);
                 if ("id" in data) {
@@ -642,7 +665,9 @@
             const bar = $("#nowPlaying");
             const playing = "id" in data;
             bar.toggleClass("idle", !playing);
+            $("#skip").prop("hidden", !playing);
             if (!playing) {
+                bar.find(".cover img").prop("hidden", true).removeAttr("src");
                 bar.find(".songTitle").text(gettext("Nothing is playing yet"));
                 bar.find(".songArtist, .npVotes, .cover span").text("");
                 bar.find(".elapsed, .duration").text(formatLength(0));
@@ -654,8 +679,49 @@
             bar.find(".songTitle").text(data.title).attr("title", data.title);
             bar.find(".songArtist").text(data.album.title ? artist + " · " + data.album.title : artist);
             bar.find(".cover").css("--hue", hue(artist)).find("span").text(artist.charAt(0).toUpperCase());
+            const cover = bar.find(".cover img");
+            if (!data.cover) {
+                cover.prop("hidden", true).removeAttr("src");
+            }
+            else if (cover.attr("src") !== data.cover) {
+                cover.prop("hidden", true).attr("src", data.cover);
+            }
+            Music.showSkipVotes(data);
             bar.find(".npVotes").html(votePill(data))
                 .attr("title", data.users.map((user) => user.name).join(", "));
+        },
+
+        showSkipVotes: function (data) {
+            $("#skip")
+                .data("historyId", data.historyId)
+                .toggleClass("active", Boolean(data.skipVoted))
+                .attr("aria-pressed", String(Boolean(data.skipVoted)))
+                .find(".skipCount")
+                .text(data.skipVotes > 0 ? data.skipVotes + "/" + data.skipNeeded : "");
+        },
+
+        initPlayerBar: function () {
+            // show the cover once it loaded, the initial stays without one
+            $("#nowPlaying .cover img").on("load", function () {
+                $(this).prop("hidden", false);
+            }).on("error", function () {
+                $(this).prop("hidden", true);
+            });
+
+            $("#skip").on("click", function () {
+                $.ajax({
+                    url: "/api/v1/songs/skip",
+                    type: "POST",
+                    data: {historyId: $(this).data("historyId")}
+                }).done((data) => {
+                    if (data.skipped) {
+                        Music.getCurrentSong();
+                    }
+                    else if ("skipVotes" in data) {
+                        Music.showSkipVotes(data);
+                    }
+                });
+            });
         },
 
         // advance the progress with the server clock, ask for the next song once it's over

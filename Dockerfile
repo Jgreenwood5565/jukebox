@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     JUKEBOX_HOME=/data
 
+# ffmpeg converts FLAC and other formats to MP3 for the web player
+RUN apt-get update     && apt-get install -y --no-install-recommends ffmpeg     && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY pyproject.toml MANIFEST.in README.md CHANGES.txt LICENSE.rst ./

@@ -778,6 +778,8 @@ body.app {
 
 .cover {
     --hue: 28;
+    position: relative;
+    overflow: hidden;
     display: grid;
     place-items: center;
     width: 54px;
@@ -789,6 +791,18 @@ body.app {
     background: linear-gradient(135deg, hsl(var(--hue) 85% 62%), hsl(calc(var(--hue) + 45) 70% 38%));
     border-radius: var(--radius-small);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.cover img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cover img[hidden] {
+    display: none;
 }
 
 #nowPlaying.idle .cover {
@@ -912,6 +926,58 @@ body.app {
 
 #listen.playing .iconStop {
     display: block;
+}
+
+#skip {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+
+#skip[hidden] {
+    display: none;
+}
+
+#skip:hover {
+    color: var(--text-strong);
+    background-color: var(--surface-hover);
+}
+
+#skip.active {
+    color: var(--accent);
+    background-color: var(--accent-soft);
+    border-color: transparent;
+}
+
+#skip svg {
+    width: 18px;
+    height: 18px;
+}
+
+#skip svg path:first-child {
+    fill: currentColor;
+}
+
+#skip .skipCount:not(:empty) {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--on-accent);
+    background: var(--accent-gradient);
+    border-radius: 999px;
 }
 
 .npTime {

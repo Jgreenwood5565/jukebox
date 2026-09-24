@@ -71,12 +71,27 @@ and remaining (``remaining``) and ``historyId``, which changes with every song p
 song plays twice in a row. Returns an empty object if nothing has been played yet.
 
 With the web player enabled (``JUKEBOX_WEB_PLAYER``, the default) this request also moves the jukebox on:
-once the current song is over, it picks the next one.
+once the current song is over, it picks the next one. The response then also contains:
+
+- ``cover``: URL of the song's cover art, or ``null``
+- ``transcoded``: ``true`` if the stream is converted to MP3 and can't seek (see below)
+- ``skipVotes``, ``skipNeeded`` and ``skipVoted``: votes to skip the song, the votes it takes and
+  whether you voted
+
+Add ``listening=1`` while the web player is playing: the listeners decide how many skip votes it takes.
 
 **/api/v1/songs/[song_id]/stream**
 
-The audio file of a song. Supports a single HTTP byte range (``Range: bytes=start-end``) for seeking.
-Responds with ``404`` if the web player is disabled or the file is gone.
+The audio of a song. MP3 files are sent as they are and support a single HTTP byte range
+(``Range: bytes=start-end``) for seeking. Other formats are converted to MP3
+(``JUKEBOX_TRANSCODE_BITRATE``, 192 kbit/s by default) while they play; such a stream can't seek, pass
+``start`` (seconds) to begin later in the song. Responds with ``404`` if the web player is disabled or
+the file is gone.
+
+**/api/v1/songs/[song_id]/cover**
+
+The song's cover art: an image next to it (``cover.jpg``, ``folder.jpg``, ``front.jpg``, ...) or the
+picture embedded in its tags. Responds with ``404`` if there is none.
 
 **/api/v1/artists**
 
@@ -198,7 +213,12 @@ Add song to favourite list. Responds with ``201`` if the song was added and ``20
 
 **/api/v1/songs/skip**
 
-Skip the song currently playing, for every listener. Responds with ``204``.
+Vote to skip the song currently playing, for every listener. It's skipped once a majority of the listeners
+voted; admins (staff users) skip right away. Pass ``historyId`` of the song you vote against, a vote for a
+song that's no longer playing is ignored. Responds with ``{"skipped": true}`` or with ``skipped: false``
+and the current ``skipVotes``, ``skipNeeded`` and ``skipVoted``.
+
+With the web player disabled, it signals the playback plugins and responds with ``204``.
 
 DELETE methods
 ===============
